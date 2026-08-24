@@ -36,10 +36,12 @@ service cloud.firestore {
     }
 
     // Cliente (app móvel, conta normal — nunca sessão anónima) pode
-    // retirar a sua própria senha e desistir dela enquanto está em
-    // espera. Não pode tocar em mais nenhum campo nem senha de outrem;
-    // qualquer outra transição (chamar, transferir, concluir) continua
-    // reservada à equipa pela regra acima.
+    // retirar a sua própria senha, desistir dela (tanto em espera como já
+    // a ser atendida — "Sair da fila" e "Não posso comparecer" no
+    // CalledScreen usam a mesma transição) e avisar que está a caminho
+    // enquanto é atendido. Não pode tocar em mais nenhum campo nem senha
+    // de outrem; qualquer outra transição (chamar, transferir, concluir,
+    // marcar ausência) continua reservada à equipa pela regra acima.
     match /institutions/{institutionId}/branches/{branchId}/tickets/{ticketId} {
       allow create: if request.auth != null &&
         request.auth.token.firebase.sign_in_provider != 'anonymous' &&
@@ -50,9 +52,31 @@ service cloud.firestore {
 
       allow update: if request.auth != null &&
         resource.data.customerUid == request.auth.uid &&
-        resource.data.status == 'waiting' &&
+        resource.data.status in ['waiting', 'serving'] &&
+        (
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'noShowReason']) &&
+            request.resource.data.status == 'no_show' &&
+            request.resource.data.noShowReason == 'customer_cancelled') ||
+          (resource.data.status == 'serving' &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['customerOnTheWay']) &&
+            request.resource.data.customerOnTheWay == true)
+        );
+    }
+
+    // Espelho, visível à equipa, dos agendamentos futuros que o cliente
+    // marca em users/{uid}/appointments (privado) — só para a localização
+    // piloto. O cliente pode criar o seu próprio e marcá-lo como
+    // cancelado; nunca apagar nem tocar noutro campo.
+    match /institutions/{institutionId}/branches/{branchId}/appointments/{appointmentId} {
+      allow create: if request.auth != null &&
+        request.auth.token.firebase.sign_in_provider != 'anonymous' &&
+        request.resource.data.customerUid == request.auth.uid &&
+        request.resource.data.status == 'scheduled';
+
+      allow update: if request.auth != null &&
+        resource.data.customerUid == request.auth.uid &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
-        request.resource.data.status == 'no_show';
+        request.resource.data.status == 'cancelled';
     }
 
     // Contador usado para gerar o código sequencial da senha do cliente
