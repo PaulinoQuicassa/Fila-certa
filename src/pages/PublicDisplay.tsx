@@ -1,8 +1,32 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { signInAnonymously } from 'firebase/auth';
 import { auth } from '../firebase';
 import { subscribeLiveBoard, subscribeTicketsToday } from '../lib/queue';
 import type { LiveBoard, Ticket } from '../types';
+
+/** Toca um sinal sonoro de duas notas (ding-dong) sem depender de um
+ * ficheiro de áudio — gerado via Web Audio API. */
+function playCallChime() {
+  const AudioCtx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+  if (!AudioCtx) return;
+  const ctx = new AudioCtx();
+  const notes: Array<[frequency: number, start: number]> = [[880, 0], [660, 0.22]];
+  notes.forEach(([frequency, start]) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = frequency;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    const t0 = ctx.currentTime + start;
+    gain.gain.setValueAtTime(0, t0);
+    gain.gain.linearRampToValueAtTime(0.35, t0 + 0.03);
+    gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.4);
+    osc.start(t0);
+    osc.stop(t0 + 0.4);
+  });
+  setTimeout(() => ctx.close(), 1000);
+}
 
 // Institution/branch fixas para o piloto — ver README para como isto
 // deixa de ser hardcoded quando houver mais do que uma agência.
@@ -22,10 +46,19 @@ export function PublicDisplay() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [time, setTime] = useState(() => new Date());
   const [ready, setReady] = useState(false);
+  const lastCalledAt = useRef<number | null>(null);
 
   useEffect(() => {
     signInAnonymously(auth).finally(() => setReady(true));
   }, []);
+
+  useEffect(() => {
+    if (board.updatedAt === null) return;
+    if (lastCalledAt.current !== null && board.updatedAt !== lastCalledAt.current) {
+      playCallChime();
+    }
+    lastCalledAt.current = board.updatedAt;
+  }, [board.updatedAt]);
 
   useEffect(() => {
     if (!ready) return;
