@@ -154,8 +154,31 @@ export function AgentScreen() {
                       Prioridade
                     </span>
                   )}
+                  {currentTicket.customerOnTheWay && (
+                    <span className="fc-pill" style={{ background: 'var(--fc-green-light)', color: 'var(--fc-green)' }}>
+                      Cliente a caminho
+                    </span>
+                  )}
                 </div>
               </div>
+
+              {currentTicket.noShowReason === 'customer_cancelled' && (
+                <div
+                  className="fc-card"
+                  style={{ background: 'var(--fc-danger-bg, #fdecea)', boxShadow: 'none', padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}
+                >
+                  <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--fc-danger)' }}>
+                    O cliente avisou que não vai comparecer.
+                  </span>
+                  <button
+                    className="fc-btn fc-btn--secondary"
+                    disabled={busy}
+                    onClick={() => run(() => markNoShow(institutionId, branchId, counterId, currentTicket.id))}
+                  >
+                    Libertar Balcão
+                  </button>
+                </div>
+              )}
 
               <div style={{ height: 1, background: 'var(--fc-border)' }} />
 
