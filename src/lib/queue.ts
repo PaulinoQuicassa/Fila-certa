@@ -30,6 +30,7 @@ function ticketFromDoc(id: string, data: Record<string, unknown>): Ticket {
     createdAt: toMillis(data.createdAt as Timestamp) ?? Date.now(),
     calledAt: toMillis(data.calledAt as Timestamp),
     doneAt: toMillis(data.doneAt as Timestamp),
+    transferredToCounterId: (data.transferredToCounterId as string | null) ?? null,
   };
 }
 
@@ -138,25 +139,29 @@ export function subscribeTicketsToday(
   });
 }
 
-async function updateLiveBoard(
+/** Lê o estado actual do painel ao vivo (tem de acontecer antes de
+ * qualquer escrita na transacção — o Firestore exige todas as leituras
+ * antes de todas as escritas). Devolve uma função que aplica a escrita. */
+async function readLiveBoard(
   transaction: import('firebase/firestore').Transaction,
   institutionId: string,
   branchId: string,
-  entry: { code: string; counterLabel: string },
 ) {
   const boardRef = doc(db, `${branchPath(institutionId, branchId)}/liveBoard/current`);
   const boardSnap = await transaction.get(boardRef);
   const prevCurrent = boardSnap.exists() ? boardSnap.data().current : null;
   const prevHistory = boardSnap.exists() ? (boardSnap.data().history ?? []) : [];
-  const nextHistory = prevCurrent ? [prevCurrent, ...prevHistory].slice(0, 4) : prevHistory;
-  transaction.set(boardRef, {
-    current: entry,
-    history: nextHistory,
-    updatedAt: serverTimestamp(),
-  });
+  return (entry: { code: string; counterLabel: string }) => {
+    const nextHistory = prevCurrent ? [prevCurrent, ...prevHistory].slice(0, 4) : prevHistory;
+    transaction.set(boardRef, {
+      current: entry,
+      history: nextHistory,
+      updatedAt: serverTimestamp(),
+    });
+  };
 }
 
-/** Chama a próxima senha em espera para o guichê do agente. */
+/** Chama a próxima senha em espera para o balcão do agente. */
 export async function callNext(
   institutionId: string,
   branchId: string,
@@ -169,20 +174,19 @@ export async function callNext(
   const counterRef = doc(db, `${branchPath(institutionId, branchId)}/counters/${counterId}`);
 
   await runTransaction(db, async (transaction) => {
+    const writeLiveBoard = await readLiveBoard(transaction, institutionId, branchId);
     transaction.update(ticketRef, {
       status: 'serving',
       counterId,
       calledAt: serverTimestamp(),
+      transferredToCounterId: null,
     });
     transaction.update(counterRef, {
       status: 'serving',
       currentTicketId: nextTicket.id,
       agentName,
     });
-    await updateLiveBoard(transaction, institutionId, branchId, {
-      code: nextTicket.code,
-      counterLabel,
-    });
+    writeLiveBoard({ code: nextTicket.code, counterLabel });
   });
 }
 
@@ -194,10 +198,8 @@ export async function recallCurrent(
   ticket: Ticket,
 ) {
   await runTransaction(db, async (transaction) => {
-    await updateLiveBoard(transaction, institutionId, branchId, {
-      code: ticket.code,
-      counterLabel,
-    });
+    const writeLiveBoard = await readLiveBoard(transaction, institutionId, branchId);
+    writeLiveBoard({ code: ticket.code, counterLabel });
   });
 }
 
@@ -242,17 +244,24 @@ export async function markNoShow(
   await clearCounter(institutionId, branchId, counterId);
 }
 
-/** Devolve a senha à fila de espera geral (ex.: transferência para outro
- * guichê tratar mais tarde) e liberta o guichê actual. */
-export async function transferToQueue(
+/** Devolve a senha à fila de espera e liberta o balcão actual. Se
+ * `targetCounterId` for indicado, a senha fica reservada para esse balcão
+ * (só ele a pode chamar); caso contrário volta à fila geral. */
+export async function transferTicket(
   institutionId: string,
   branchId: string,
   counterId: string,
   ticketId: string,
+  targetCounterId: string | null,
 ) {
   const ticketRef = doc(db, `${branchPath(institutionId, branchId)}/tickets/${ticketId}`);
   await runTransaction(db, async (transaction) => {
-    transaction.update(ticketRef, { status: 'waiting', counterId: null, calledAt: null });
+    transaction.update(ticketRef, {
+      status: 'waiting',
+      counterId: null,
+      calledAt: null,
+      transferredToCounterId: targetCounterId,
+    });
   });
   await clearCounter(institutionId, branchId, counterId);
 }

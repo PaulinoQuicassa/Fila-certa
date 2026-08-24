@@ -21,6 +21,7 @@ export interface Ticket {
   createdAt: number; // epoch ms
   calledAt: number | null;
   doneAt: number | null;
+  transferredToCounterId: string | null; // reservado para um balcão específico
 }
 
 export type CounterStatus = 'available' | 'serving' | 'paused';

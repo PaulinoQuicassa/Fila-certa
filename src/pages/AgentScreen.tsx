@@ -7,9 +7,10 @@ import {
   recallCurrent,
   setCounterPaused,
   subscribeCounter,
+  subscribeCounters,
   subscribeTicket,
   subscribeWaitingQueue,
-  transferToQueue,
+  transferTicket,
 } from '../lib/queue';
 import type { Counter, Ticket } from '../types';
 
@@ -23,7 +24,10 @@ export function AgentScreen() {
   const [counter, setCounter] = useState<Counter | null>(null);
   const [currentTicket, setCurrentTicket] = useState<Ticket | null>(null);
   const [queue, setQueue] = useState<Ticket[]>([]);
+  const [counters, setCounters] = useState<Counter[]>([]);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [transferOpen, setTransferOpen] = useState(false);
 
   const institutionId = profile?.institutionId ?? '';
   const branchId = profile?.branchId ?? '';
@@ -40,6 +44,11 @@ export function AgentScreen() {
   }, [institutionId, branchId]);
 
   useEffect(() => {
+    if (!institutionId || !branchId) return;
+    return subscribeCounters(institutionId, branchId, setCounters);
+  }, [institutionId, branchId]);
+
+  useEffect(() => {
     if (!institutionId || !branchId || !counter?.currentTicketId) {
       setCurrentTicket(null);
       return;
@@ -52,10 +61,25 @@ export function AgentScreen() {
   const waitMin = minutesAgo(currentTicket?.createdAt ?? null);
   const isPaused = counter?.status === 'paused';
 
+  // Senhas que este balcão pode chamar: as da fila geral, mais as que
+  // foram transferidas especificamente para aqui (essas vêm primeiro).
+  const eligibleQueue = queue
+    .filter((t) => t.transferredToCounterId === null || t.transferredToCounterId === counterId)
+    .sort((a, b) => {
+      const aMine = a.transferredToCounterId === counterId ? 0 : 1;
+      const bMine = b.transferredToCounterId === counterId ? 0 : 1;
+      return aMine !== bMine ? aMine - bMine : a.createdAt - b.createdAt;
+    });
+  const otherCounters = counters.filter((c) => c.id !== counterId);
+
   async function run(action: () => Promise<void>) {
     setBusy(true);
+    setError(null);
     try {
       await action();
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : 'Ocorreu um erro inesperado.');
     } finally {
       setBusy(false);
     }
@@ -101,6 +125,12 @@ export function AgentScreen() {
           </button>
         </div>
       </div>
+
+      {error && (
+        <div className="fc-card" style={{ background: 'var(--fc-danger-bg, #fdecea)', boxShadow: 'none', padding: '14px 20px', color: 'var(--fc-danger)', fontSize: 13.5, fontWeight: 600 }}>
+          {error}
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 24, alignItems: 'start' }}>
         {/* Ticket panel */}
@@ -153,13 +183,39 @@ export function AgentScreen() {
                   >
                     Não Compareceu
                   </button>
-                  <button
-                    className="fc-btn fc-btn--secondary"
-                    disabled={busy}
-                    onClick={() => run(() => transferToQueue(institutionId, branchId, counterId, currentTicket.id))}
-                  >
-                    Transferir
-                  </button>
+                  <div style={{ position: 'relative' }}>
+                    <button
+                      className="fc-btn fc-btn--secondary"
+                      style={{ width: '100%' }}
+                      disabled={busy || otherCounters.length === 0}
+                      onClick={() => setTransferOpen((open) => !open)}
+                    >
+                      Transferir
+                    </button>
+                    {transferOpen && (
+                      <div
+                        className="fc-card"
+                        style={{
+                          position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, zIndex: 10,
+                          padding: 8, display: 'flex', flexDirection: 'column', gap: 4,
+                        }}
+                      >
+                        {otherCounters.map((c) => (
+                          <button
+                            key={c.id}
+                            disabled={busy}
+                            onClick={() => {
+                              setTransferOpen(false);
+                              run(() => transferTicket(institutionId, branchId, counterId, currentTicket.id, c.id));
+                            }}
+                            style={{ textAlign: 'left', padding: '8px 10px', borderRadius: 'var(--fc-radius-md)', fontSize: 13.5, fontWeight: 600 }}
+                          >
+                            {c.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <button
                     className="fc-btn fc-btn--secondary"
                     disabled={busy}
@@ -178,9 +234,9 @@ export function AgentScreen() {
               <button
                 className="fc-btn fc-btn--primary"
                 style={{ maxWidth: 280 }}
-                disabled={busy || isPaused || queue.length === 0}
+                disabled={busy || isPaused || eligibleQueue.length === 0}
                 onClick={() =>
-                  run(() => callNext(institutionId, branchId, counterId, counter!.label, profile.name, queue[0]))
+                  run(() => callNext(institutionId, branchId, counterId, counter!.label, profile.name, eligibleQueue[0]))
                 }
               >
                 Chamar Próxima →
@@ -193,21 +249,26 @@ export function AgentScreen() {
         <div className="fc-card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ fontSize: 15, fontWeight: 700 }}>Fila em Espera</div>
-            <div className="fc-pill" style={{ background: 'var(--fc-blue-light)', color: 'var(--fc-blue-dark)' }}>{queue.length}</div>
+            <div className="fc-pill" style={{ background: 'var(--fc-blue-light)', color: 'var(--fc-blue-dark)' }}>{eligibleQueue.length}</div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {queue.slice(0, 6).map((t) => (
+            {eligibleQueue.slice(0, 6).map((t) => (
               <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: '1.5px solid var(--fc-border)', borderRadius: 'var(--fc-radius-lg)', padding: '12px 14px' }}>
                 <div>
                   <div style={{ fontSize: 15, fontWeight: 700 }}>{t.code}{t.priority ? ' ★' : ''}</div>
                   <div style={{ fontSize: 12.5, color: 'var(--fc-text-secondary)' }}>{t.service}</div>
                 </div>
-                <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--fc-text-secondary)' }}>
-                  {minutesAgo(t.createdAt)} min
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {t.transferredToCounterId === counterId && (
+                    <span className="fc-pill" style={{ background: 'var(--fc-orange-bg)', color: 'var(--fc-orange)' }}>Transferida</span>
+                  )}
+                  <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--fc-text-secondary)' }}>
+                    {minutesAgo(t.createdAt)} min
+                  </span>
+                </div>
               </div>
             ))}
-            {queue.length === 0 && (
+            {eligibleQueue.length === 0 && (
               <div style={{ fontSize: 13, color: 'var(--fc-text-secondary)' }}>Sem senhas em espera.</div>
             )}
           </div>
