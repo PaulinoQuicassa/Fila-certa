@@ -27,11 +27,46 @@ service cloud.firestore {
     // Fila ao vivo de uma instituição: qualquer utilizador autenticado
     // (incluindo sessão anónima do ecrã público) pode LER — não há dados
     // pessoais do cliente aqui, só código da senha/serviço/guichê.
-    // Só um membro de equipa dessa instituição pode ESCREVER.
+    // Só um membro de equipa dessa instituição pode ESCREVER (chamar,
+    // transferir, pausar balcão, etc.).
     match /institutions/{institutionId}/{document=**} {
       allow read: if request.auth != null;
       allow write: if request.auth != null &&
         get(/databases/$(database)/documents/staff/$(request.auth.uid)).data.institutionId == institutionId;
+    }
+
+    // Cliente (app móvel, conta normal — nunca sessão anónima) pode
+    // retirar a sua própria senha e desistir dela enquanto está em
+    // espera. Não pode tocar em mais nenhum campo nem senha de outrem;
+    // qualquer outra transição (chamar, transferir, concluir) continua
+    // reservada à equipa pela regra acima.
+    match /institutions/{institutionId}/branches/{branchId}/tickets/{ticketId} {
+      allow create: if request.auth != null &&
+        request.auth.token.firebase.sign_in_provider != 'anonymous' &&
+        request.resource.data.customerUid == request.auth.uid &&
+        request.resource.data.status == 'waiting' &&
+        request.resource.data.counterId == null &&
+        request.resource.data.transferredToCounterId == null;
+
+      allow update: if request.auth != null &&
+        resource.data.customerUid == request.auth.uid &&
+        resource.data.status == 'waiting' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+        request.resource.data.status == 'no_show';
+    }
+
+    // Contador usado para gerar o código sequencial da senha do cliente
+    // (ex.: B001, B002, ...) — só pode avançar de 1 em 1.
+    match /institutions/{institutionId}/branches/{branchId}/meta/ticketSeq {
+      allow write: if request.auth != null &&
+        request.auth.token.firebase.sign_in_provider != 'anonymous' &&
+        request.resource.data.seq is int &&
+        (
+          (!exists(/databases/$(database)/documents/institutions/$(institutionId)/branches/$(branchId)/meta/ticketSeq) &&
+            request.resource.data.seq == 1) ||
+          (exists(/databases/$(database)/documents/institutions/$(institutionId)/branches/$(branchId)/meta/ticketSeq) &&
+            request.resource.data.seq == resource.data.seq + 1)
+        );
     }
   }
 }
