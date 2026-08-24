@@ -68,3 +68,26 @@ export interface Appointment {
   createdAt: number; // epoch ms, quando foi marcado
   status: AppointmentStatus;
 }
+
+// Notas por aspeto específico do atendimento, 1-5 — chaves fixas
+// partilhadas com o RatingScreen da app do cliente.
+export interface RatingAspects {
+  atendimento: number;
+  tempoEspera: number;
+  organizacao: number;
+  instalacoes: number;
+}
+
+// Avaliação do cliente depois de concluído o atendimento (RatingScreen) —
+// um documento por senha (id = ticketId), nunca alterável depois de
+// criado.
+export interface Rating {
+  id: string;
+  customerUid: string;
+  serviceName: string;
+  overall: number; // 1-5
+  recommend: boolean;
+  comment: string;
+  aspects: RatingAspects;
+  createdAt: number; // epoch ms
+}

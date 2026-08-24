@@ -9,7 +9,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import type { Appointment, Counter, LiveBoard, Ticket } from '../types';
+import type { Appointment, Counter, LiveBoard, Rating, Ticket } from '../types';
 
 function branchPath(institutionId: string, branchId: string) {
   return `institutions/${institutionId}/branches/${branchId}`;
@@ -168,6 +168,41 @@ export function subscribeAppointmentsToday(
   const q = query(appointmentsRef, where('createdAt', '>=', Timestamp.fromDate(startOfDay)));
   return onSnapshot(q, (snap) => {
     onChange(snap.docs.map((d) => appointmentFromDoc(d.id, d.data())));
+  });
+}
+
+function ratingFromDoc(id: string, data: Record<string, unknown>): Rating {
+  const aspects = (data.aspects as Record<string, number>) ?? {};
+  return {
+    id,
+    customerUid: data.customerUid as string,
+    serviceName: data.serviceName as string,
+    overall: Number(data.overall) || 0,
+    recommend: Boolean(data.recommend),
+    comment: (data.comment as string) ?? '',
+    aspects: {
+      atendimento: Number(aspects.atendimento) || 0,
+      tempoEspera: Number(aspects.tempoEspera) || 0,
+      organizacao: Number(aspects.organizacao) || 0,
+      instalacoes: Number(aspects.instalacoes) || 0,
+    },
+    createdAt: toMillis(data.createdAt as Timestamp) ?? Date.now(),
+  };
+}
+
+/** Avaliações submetidas hoje pelos clientes (RatingScreen), depois de
+ * concluído o atendimento — alimenta o resumo de qualidade do dashboard. */
+export function subscribeRatingsToday(
+  institutionId: string,
+  branchId: string,
+  onChange: (ratings: Rating[]) => void,
+) {
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const ratingsRef = collection(db, `${branchPath(institutionId, branchId)}/ratings`);
+  const q = query(ratingsRef, where('createdAt', '>=', Timestamp.fromDate(startOfDay)));
+  return onSnapshot(q, (snap) => {
+    onChange(snap.docs.map((d) => ratingFromDoc(d.id, d.data())));
   });
 }
 
