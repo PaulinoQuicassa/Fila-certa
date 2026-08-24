@@ -79,6 +79,17 @@ service cloud.firestore {
         request.resource.data.status == 'cancelled';
     }
 
+    // Avaliação do cliente depois de concluído o atendimento (um
+    // documento por senha, id = ticketId). O cliente só pode criar a sua
+    // própria avaliação uma vez — nunca alterar nem apagar depois; se o
+    // documento já existir, o pedido passa a ser tratado como "update" e
+    // fica automaticamente recusado por não haver regra de update aqui.
+    match /institutions/{institutionId}/branches/{branchId}/ratings/{ticketId} {
+      allow create: if request.auth != null &&
+        request.auth.token.firebase.sign_in_provider != 'anonymous' &&
+        request.resource.data.customerUid == request.auth.uid;
+    }
+
     // Contador usado para gerar o código sequencial da senha do cliente
     // (ex.: B001, B002, ...) — só pode avançar de 1 em 1.
     match /institutions/{institutionId}/branches/{branchId}/meta/ticketSeq {
