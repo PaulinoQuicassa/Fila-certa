@@ -1,5 +1,15 @@
 {
   "projects": {
     "default": "filacerta-d74f0"
-  }
+  },
+  "targets": {
+    "filacerta-d74f0": {
+      "hosting": {
+        "staff": [
+          "filacerta-staff"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }
