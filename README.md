@@ -49,28 +49,24 @@ Contas de teste criadas pelo `seed`:
 - `gestor@filacerta.test` / `teste123` → `/dashboard`
 - `/painel` → ecrã público, sem login (sessão anónima automática)
 
-## Ligar à produção (`filacerta-d74f0`) — passos manuais, não automáticos
+## Ligar à produção (`filacerta-d74f0`)
 
-Isto **ainda não foi feito** — exige decisões e acesso que só o
-utilizador tem:
-
-1. **Publicar as Firestore Rules actualizadas.** `firestore.rules` deste
-   repositório e de `projectogestaodefilas/firestore.rules` foram
-   actualizados em paralelo (colecções `staff/**` e `institutions/**`
-   adicionadas, `users/**` inalterado) — confirmar que os dois ficheiros
-   ainda coincidem e só depois `firebase deploy --only firestore:rules`
-   a partir de um dos dois repositórios.
-2. **Activar autenticação anónima** no Firebase Console → Authentication
-   → Sign-in method → Anonymous (o painel público de TV usa-a; a app
-   cliente e o script de seed não mexem nisto, tem de ser activado
-   manualmente).
-3. **Criar as contas reais de staff** (agente/gestor por instituição) —
-   o script `seed.mjs` só escreve no emulador; criar utilizadores reais
-   é feito manualmente no Console ou com um script equivalente apontado
-   à produção (fora do âmbito deste README, por ser uma acção com
-   efeitos reais).
+1. **Firestore Rules** — publicadas (`npm run deploy:rules`, ou
+   `firebase deploy --only firestore:rules --project filacerta-d74f0`).
+   Sempre que voltares a mudar `firestore.rules` aqui, replicar a mesma
+   mudança em `projectogestaodefilas/firestore.rules` antes de publicar
+   outra vez — os dois têm de se manter idênticos.
+2. **Autenticação anónima** — activar em Firebase Console → Authentication
+   → Sign-in method → Anonymous, se ainda não estiver. Só possível pela
+   consola, não há comando de CLI para isto. O painel público (`/painel`)
+   não funciona contra produção sem isto.
+3. **Contas reais de staff + dados de exemplo** — `npm run seed:prod`
+   (variante de produção do `seed.mjs`, ver comentário no topo do
+   ficheiro `scripts/seed-prod.mjs` para como gerar a credencial
+   necessária). Idempotente, pode correr mais do que uma vez.
 4. Copiar `.env.example` para `.env.local` com `VITE_USE_EMULATOR=false`
-   e os IDs reais de instituição/agência.
+   e os IDs reais de instituição/agência, depois `npm run dev` (sem
+   `:emulator`) para testar contra produção.
 
 ## Estrutura
 
