@@ -9,7 +9,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import type { Counter, LiveBoard, Ticket } from '../types';
+import type { Appointment, Counter, LiveBoard, Ticket } from '../types';
 
 function branchPath(institutionId: string, branchId: string) {
   return `institutions/${institutionId}/branches/${branchId}`;
@@ -31,6 +31,9 @@ function ticketFromDoc(id: string, data: Record<string, unknown>): Ticket {
     calledAt: toMillis(data.calledAt as Timestamp),
     doneAt: toMillis(data.doneAt as Timestamp),
     transferredToCounterId: (data.transferredToCounterId as string | null) ?? null,
+    noShowReason: (data.noShowReason as Ticket['noShowReason']) ?? null,
+    wasTransferred: Boolean(data.wasTransferred),
+    customerOnTheWay: Boolean(data.customerOnTheWay),
   };
 }
 
@@ -139,6 +142,35 @@ export function subscribeTicketsToday(
   });
 }
 
+function appointmentFromDoc(id: string, data: Record<string, unknown>): Appointment {
+  return {
+    id,
+    customerUid: data.customerUid as string,
+    serviceName: data.serviceName as string,
+    date: toMillis(data.date as Timestamp) ?? Date.now(),
+    time: data.time as string,
+    createdAt: toMillis(data.createdAt as Timestamp) ?? Date.now(),
+    status: (data.status as Appointment['status']) ?? 'scheduled',
+  };
+}
+
+/** Agendamentos marcados hoje para esta agência — espelho institucional
+ * (visível à equipa) de users/{uid}/appointments, escrito pela app do
+ * cliente só para a localização piloto. */
+export function subscribeAppointmentsToday(
+  institutionId: string,
+  branchId: string,
+  onChange: (appointments: Appointment[]) => void,
+) {
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const appointmentsRef = collection(db, `${branchPath(institutionId, branchId)}/appointments`);
+  const q = query(appointmentsRef, where('createdAt', '>=', Timestamp.fromDate(startOfDay)));
+  return onSnapshot(q, (snap) => {
+    onChange(snap.docs.map((d) => appointmentFromDoc(d.id, d.data())));
+  });
+}
+
 /** Lê o estado actual do painel ao vivo (tem de acontecer antes de
  * qualquer escrita na transacção — o Firestore exige todas as leituras
  * antes de todas as escritas). Devolve uma função que aplica a escrita. */
@@ -180,6 +212,7 @@ export async function callNext(
       counterId,
       calledAt: serverTimestamp(),
       transferredToCounterId: null,
+      customerOnTheWay: false,
     });
     transaction.update(counterRef, {
       status: 'serving',
@@ -239,7 +272,7 @@ export async function markNoShow(
 ) {
   const ticketRef = doc(db, `${branchPath(institutionId, branchId)}/tickets/${ticketId}`);
   await runTransaction(db, async (transaction) => {
-    transaction.update(ticketRef, { status: 'no_show', doneAt: serverTimestamp() });
+    transaction.update(ticketRef, { status: 'no_show', doneAt: serverTimestamp(), noShowReason: 'staff_marked' });
   });
   await clearCounter(institutionId, branchId, counterId);
 }
@@ -261,6 +294,7 @@ export async function transferTicket(
       counterId: null,
       calledAt: null,
       transferredToCounterId: targetCounterId,
+      wasTransferred: true,
     });
   });
   await clearCounter(institutionId, branchId, counterId);
