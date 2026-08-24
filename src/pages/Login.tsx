@@ -14,8 +14,12 @@ export function Login() {
     setBusy(true);
     try {
       await login(email, password);
-    } catch {
-      setError('Email ou palavra-passe incorrectos.');
+    } catch (err) {
+      setError(
+        err instanceof Error && err.message === 'no-staff-profile'
+          ? 'Esta conta não tem um perfil de equipa associado.'
+          : 'Email ou palavra-passe incorrectos.',
+      );
     } finally {
       setBusy(false);
     }

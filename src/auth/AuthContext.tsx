@@ -23,8 +23,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) {
-        const snap = await getDoc(doc(db, 'staff', u.uid));
-        setProfile(snap.exists() ? ({ uid: u.uid, ...snap.data() } as StaffProfile) : null);
+        try {
+          const snap = await getDoc(doc(db, 'staff', u.uid));
+          setProfile(snap.exists() ? ({ uid: u.uid, ...snap.data() } as StaffProfile) : null);
+        } catch (err) {
+          console.error('Falha ao ler perfil de staff:', err);
+          setProfile(null);
+        }
       } else {
         setProfile(null);
       }
@@ -33,7 +38,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   async function login(email: string, password: string) {
-    await signInWithEmailAndPassword(auth, email, password);
+    const cred = await signInWithEmailAndPassword(auth, email, password);
+    const snap = await getDoc(doc(db, 'staff', cred.user.uid));
+    if (!snap.exists()) {
+      await signOut(auth);
+      throw new Error('no-staff-profile');
+    }
   }
 
   async function logout() {
