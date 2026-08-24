@@ -40,12 +40,12 @@ público de cada agência) quando houver mais do que uma instituição.
 ```bash
 npm install
 npm run emulators        # terminal 1 — Firestore + Auth locais (porta 8080/9099, UI em 4001)
-npm run seed              # terminal 2 — cria instituição/guichês/senhas de exemplo + 2 contas de staff
+npm run seed              # terminal 2 — cria instituição/balcões/senhas de exemplo + 2 contas de staff
 npm run dev:emulator      # terminal 3 — Vite, já ligado ao emulador
 ```
 
 Contas de teste criadas pelo `seed`:
-- `agente@filacerta.test` / `teste123` → `/agente` (Guichê 3)
+- `agente@filacerta.test` / `teste123` → `/agente` (Balcão 3)
 - `gestor@filacerta.test` / `teste123` → `/dashboard`
 - `/painel` → ecrã público, sem login (sessão anónima automática)
 

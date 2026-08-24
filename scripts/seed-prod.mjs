@@ -19,7 +19,9 @@
 // Idempotente: correr outra vez não duplica dados (staff por email,
 // counters por id fixo; só cria as 6 senhas de exemplo se a colecção
 // ainda estiver vazia).
-import admin from 'firebase-admin';
+import { initializeApp, applicationDefault } from 'firebase-admin/app';
+import { getFirestore, Timestamp } from 'firebase-admin/firestore';
+import { getAuth } from 'firebase-admin/auth';
 
 if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
   console.error(
@@ -31,12 +33,12 @@ if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
   process.exit(1);
 }
 
-admin.initializeApp({
-  credential: admin.credential.applicationDefault(),
+const app = initializeApp({
+  credential: applicationDefault(),
   projectId: 'filacerta-d74f0',
 });
-const db = admin.firestore();
-const auth = admin.auth();
+const db = getFirestore(app);
+const auth = getAuth(app);
 
 const INSTITUTION_ID = 'banco-exemplo';
 const BRANCH_ID = 'agencia-maianga';
@@ -63,9 +65,9 @@ async function main() {
   await db.doc(`institutions/${INSTITUTION_ID}/branches/${BRANCH_ID}`).set({ name: 'Agência Maianga' });
 
   const counters = [
-    { id: 'guiche-1', label: 'Guichê 1' },
-    { id: 'guiche-2', label: 'Guichê 2' },
-    { id: 'guiche-3', label: 'Guichê 3' },
+    { id: 'guiche-1', label: 'Balcão 1' },
+    { id: 'guiche-2', label: 'Balcão 2' },
+    { id: 'guiche-3', label: 'Balcão 3' },
   ];
   for (const c of counters) {
     await db.doc(`institutions/${INSTITUTION_ID}/branches/${BRANCH_ID}/counters/${c.id}`).set({
@@ -89,7 +91,7 @@ async function main() {
         priority: i === 2,
         status: 'waiting',
         counterId: null,
-        createdAt: admin.firestore.Timestamp.fromMillis(now - (6 - i) * 4 * 60000),
+        createdAt: Timestamp.fromMillis(now - (6 - i) * 4 * 60000),
         calledAt: null,
         doneAt: null,
       });

@@ -82,7 +82,7 @@ export function Dashboard() {
           <div style={{ fontSize: 40, fontWeight: 800, color: 'var(--fc-blue-dark)' }}>{avgWait ?? '—'} min</div>
         </div>
         <div className="fc-card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--fc-text-secondary)' }}>Guichês activos</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--fc-text-secondary)' }}>Balcões activos</div>
           <div style={{ fontSize: 40, fontWeight: 800, color: 'var(--fc-blue-dark)' }}>
             {activeCounters} <span style={{ fontSize: 18, fontWeight: 600, color: 'var(--fc-text-secondary)' }}>/ {counters.length}</span>
           </div>
@@ -90,12 +90,12 @@ export function Dashboard() {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div style={{ fontSize: 17, fontWeight: 700 }}>Vista por Guichê / Agente</div>
+        <div style={{ fontSize: 17, fontWeight: 700 }}>Vista por Balcão / Agente</div>
         <div className="fc-card" style={{ overflow: 'hidden' }}>
           <table style={{ borderCollapse: 'collapse', width: '100%' }}>
             <thead>
               <tr style={{ borderBottom: '1.5px solid var(--fc-border)' }}>
-                {['Guichê', 'Agente', 'Atendimentos hoje', 'Tempo médio', 'Estado'].map((h) => (
+                {['Balcão', 'Agente', 'Atendimentos hoje', 'Tempo médio', 'Estado'].map((h) => (
                   <th key={h} style={{ textAlign: 'left', padding: '12px 14px', fontSize: 13.5, color: 'var(--fc-text-secondary)' }}>{h}</th>
                 ))}
               </tr>
