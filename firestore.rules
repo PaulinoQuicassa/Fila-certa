@@ -1,0 +1,37 @@
+rules_version = '2';
+
+// IMPORTANTE: este ficheiro é usado aqui só para o emulador local de
+// desenvolvimento. As regras REAIS de produção vivem em
+// projectogestaodefilas/firestore.rules (repo da app cliente) — as duas
+// têm de se manter idênticas, porque partilham o mesmo projecto Firebase
+// (filacerta-d74f0). Nunca fazer `firebase deploy --only firestore:rules`
+// a partir deste repositório sem primeiro confirmar que este ficheiro e o
+// da app cliente estão sincronizados.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Dados pessoais da conta do cliente (agendamentos, histórico,
+    // preferências) — regra original da app cliente, inalterada.
+    match /users/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Perfil de um membro de equipa (agente/gestor) — só o próprio lê o
+    // seu perfil; a atribuição de função/instituição é feita manualmente
+    // (consola/seed), nunca pelo próprio utilizador.
+    match /staff/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // Fila ao vivo de uma instituição: qualquer utilizador autenticado
+    // (incluindo sessão anónima do ecrã público) pode LER — não há dados
+    // pessoais do cliente aqui, só código da senha/serviço/guichê.
+    // Só um membro de equipa dessa instituição pode ESCREVER.
+    match /institutions/{institutionId}/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null &&
+        get(/databases/$(database)/documents/staff/$(request.auth.uid)).data.institutionId == institutionId;
+    }
+  }
+}

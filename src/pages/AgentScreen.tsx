@@ -1,0 +1,218 @@
+import { useEffect, useState } from 'react';
+import { useAuth } from '../auth/AuthContext';
+import {
+  callNext,
+  completeCurrent,
+  markNoShow,
+  recallCurrent,
+  setCounterPaused,
+  subscribeCounter,
+  subscribeTicket,
+  subscribeWaitingQueue,
+  transferToQueue,
+} from '../lib/queue';
+import type { Counter, Ticket } from '../types';
+
+function minutesAgo(ts: number | null) {
+  if (!ts) return null;
+  return Math.max(0, Math.round((Date.now() - ts) / 60000));
+}
+
+export function AgentScreen() {
+  const { profile, logout } = useAuth();
+  const [counter, setCounter] = useState<Counter | null>(null);
+  const [currentTicket, setCurrentTicket] = useState<Ticket | null>(null);
+  const [queue, setQueue] = useState<Ticket[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  const institutionId = profile?.institutionId ?? '';
+  const branchId = profile?.branchId ?? '';
+  const counterId = profile?.counterId ?? '';
+
+  useEffect(() => {
+    if (!institutionId || !branchId || !counterId) return;
+    return subscribeCounter(institutionId, branchId, counterId, setCounter);
+  }, [institutionId, branchId, counterId]);
+
+  useEffect(() => {
+    if (!institutionId || !branchId) return;
+    return subscribeWaitingQueue(institutionId, branchId, setQueue);
+  }, [institutionId, branchId]);
+
+  useEffect(() => {
+    if (!institutionId || !branchId || !counter?.currentTicketId) {
+      setCurrentTicket(null);
+      return;
+    }
+    return subscribeTicket(institutionId, branchId, counter.currentTicketId, setCurrentTicket);
+  }, [institutionId, branchId, counter?.currentTicketId]);
+
+  if (!profile) return null;
+
+  const waitMin = minutesAgo(currentTicket?.createdAt ?? null);
+  const isPaused = counter?.status === 'paused';
+
+  async function run(action: () => Promise<void>) {
+    setBusy(true);
+    try {
+      await action();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const statusOptions: Array<{ label: string; active: boolean; onClick: () => void }> = [
+    { label: 'Disponível', active: counter?.status === 'available', onClick: () => run(() => setCounterPaused(institutionId, branchId, counterId, false)) },
+    { label: 'Em atendimento', active: counter?.status === 'serving', onClick: () => {} },
+    { label: 'Pausa', active: isPaused, onClick: () => run(() => setCounterPaused(institutionId, branchId, counterId, !isPaused)) },
+  ];
+
+  return (
+    <div style={{ minHeight: '100vh', padding: 32, display: 'flex', flexDirection: 'column', gap: 24 }}>
+      {/* Header */}
+      <div className="fc-card" style={{ padding: '20px 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ width: 52, height: 52, borderRadius: 999, background: 'var(--fc-blue-light)', color: 'var(--fc-blue-dark)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 18 }}>
+            {profile.name.split(' ').map((p) => p[0]).slice(0, 2).join('')}
+          </div>
+          <div>
+            <div style={{ fontSize: 17, fontWeight: 700 }}>{profile.name}</div>
+            <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--fc-text-secondary)' }}>{counter?.label ?? '—'}</div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ display: 'flex', gap: 4, background: 'var(--fc-bg)', borderRadius: 999, padding: 4 }}>
+            {statusOptions.map((opt) => (
+              <button
+                key={opt.label}
+                onClick={opt.onClick}
+                style={{
+                  padding: '8px 16px', borderRadius: 999, fontSize: 13, fontWeight: 700,
+                  background: opt.active ? 'var(--fc-blue-dark)' : 'transparent',
+                  color: opt.active ? '#fff' : 'var(--fc-text-secondary)',
+                }}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <button onClick={() => logout()} style={{ fontSize: 13, fontWeight: 600, color: 'var(--fc-text-secondary)' }}>
+            Terminar sessão
+          </button>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 24, alignItems: 'start' }}>
+        {/* Ticket panel */}
+        <div className="fc-card" style={{ padding: 40, display: 'flex', flexDirection: 'column', gap: 28 }}>
+          {currentTicket ? (
+            <>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--fc-text-secondary)', textTransform: 'uppercase' }}>
+                  Senha em atendimento
+                </div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 20 }}>
+                  <div style={{ fontSize: 64, fontWeight: 800, color: 'var(--fc-blue-dark)', lineHeight: 1 }}>{currentTicket.code}</div>
+                  <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--fc-text-secondary)' }}>{currentTicket.service}</div>
+                </div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <span className="fc-pill" style={{ background: 'var(--fc-blue-light)', color: 'var(--fc-blue-dark)' }}>
+                    Tempo de espera: {waitMin ?? '—'} min
+                  </span>
+                  {currentTicket.priority && (
+                    <span className="fc-pill" style={{ background: 'var(--fc-orange-bg)', color: 'var(--fc-orange)' }}>
+                      Prioridade
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ height: 1, background: 'var(--fc-border)' }} />
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <button
+                  className="fc-btn fc-btn--success"
+                  disabled={busy}
+                  onClick={() => run(() => completeCurrent(institutionId, branchId, counterId, currentTicket.id))}
+                >
+                  Concluir Atendimento
+                </button>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 12 }}>
+                  <button
+                    className="fc-btn fc-btn--secondary"
+                    disabled={busy}
+                    onClick={() => run(() => recallCurrent(institutionId, branchId, counter!.label, currentTicket))}
+                  >
+                    Chamar Novamente
+                  </button>
+                  <button
+                    className="fc-btn fc-btn--secondary"
+                    style={{ color: 'var(--fc-danger)' }}
+                    disabled={busy}
+                    onClick={() => run(() => markNoShow(institutionId, branchId, counterId, currentTicket.id))}
+                  >
+                    Não Compareceu
+                  </button>
+                  <button
+                    className="fc-btn fc-btn--secondary"
+                    disabled={busy}
+                    onClick={() => run(() => transferToQueue(institutionId, branchId, counterId, currentTicket.id))}
+                  >
+                    Transferir
+                  </button>
+                  <button
+                    className="fc-btn fc-btn--secondary"
+                    disabled={busy}
+                    onClick={() => run(() => setCounterPaused(institutionId, branchId, counterId, !isPaused))}
+                  >
+                    {isPaused ? 'Retomar Fila' : 'Pausar Fila'}
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 24, alignItems: 'center', padding: '40px 0' }}>
+              <div style={{ fontSize: 16, color: 'var(--fc-text-secondary)' }}>
+                {isPaused ? 'Fila em pausa.' : 'Nenhuma senha em atendimento.'}
+              </div>
+              <button
+                className="fc-btn fc-btn--primary"
+                style={{ maxWidth: 280 }}
+                disabled={busy || isPaused || queue.length === 0}
+                onClick={() =>
+                  run(() => callNext(institutionId, branchId, counterId, counter!.label, profile.name, queue[0]))
+                }
+              >
+                Chamar Próxima →
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Queue sidebar */}
+        <div className="fc-card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>Fila em Espera</div>
+            <div className="fc-pill" style={{ background: 'var(--fc-blue-light)', color: 'var(--fc-blue-dark)' }}>{queue.length}</div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {queue.slice(0, 6).map((t) => (
+              <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: '1.5px solid var(--fc-border)', borderRadius: 'var(--fc-radius-lg)', padding: '12px 14px' }}>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 700 }}>{t.code}{t.priority ? ' ★' : ''}</div>
+                  <div style={{ fontSize: 12.5, color: 'var(--fc-text-secondary)' }}>{t.service}</div>
+                </div>
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--fc-text-secondary)' }}>
+                  {minutesAgo(t.createdAt)} min
+                </span>
+              </div>
+            ))}
+            {queue.length === 0 && (
+              <div style={{ fontSize: 13, color: 'var(--fc-text-secondary)' }}>Sem senhas em espera.</div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

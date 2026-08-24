@@ -1,0 +1,71 @@
+/* Fila Certa (staff) — tokens de marca, alinhados com o mesmo estilo
+   visual usado no mockup e no design system da SeguroCerto: simples,
+   premium, profissional, amigável. Prefixo próprio (fc-) porque este é
+   um repositório/produto separado — mesmos valores como ponto de
+   partida, não um import cruzado entre projectos. */
+:root {
+  --fc-blue: #1455D9;
+  --fc-blue-dark: #102A43;
+  --fc-blue-light: #EAF2FF;
+
+  --fc-green: #16A66A;
+  --fc-green-light: #E9F8F1;
+
+  --fc-bg: #F7F9FC;
+  --fc-white: #FFFFFF;
+  --fc-text-primary: #102A43;
+  --fc-text-secondary: #52677D;
+  --fc-border: #DDE5EE;
+
+  --fc-warning: #F59E0B;
+  --fc-danger: #E53935;
+  --fc-orange: #F28C28;
+  --fc-orange-bg: #FEF0E3;
+  --fc-danger-bg: #FDEAE9;
+
+  --fc-radius-sm: 8px;
+  --fc-radius-md: 12px;
+  --fc-radius-lg: 16px;
+  --fc-radius-xl: 24px;
+  --fc-radius-pill: 999px;
+
+  --fc-shadow-sm: 0 1px 2px rgba(16, 42, 67, 0.06);
+  --fc-shadow-md: 0 4px 16px rgba(16, 42, 67, 0.08);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: 'Inter', -apple-system, 'Segoe UI', Roboto, sans-serif;
+  background: var(--fc-bg);
+  color: var(--fc-text-primary);
+}
+
+button { font-family: inherit; cursor: pointer; border: none; background: none; }
+input { font-family: inherit; }
+
+.fc-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  border-radius: var(--fc-radius-md); padding: 15px 24px;
+  font-size: 16px; font-weight: 700;
+}
+.fc-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.fc-btn--primary { background: var(--fc-blue-dark); color: #fff; width: 100%; }
+.fc-btn--success { background: var(--fc-green); color: #fff; width: 100%; }
+.fc-btn--secondary {
+  background: var(--fc-white); color: var(--fc-blue-dark);
+  border: 1.5px solid var(--fc-border); font-size: 14px; padding: 13px 16px;
+}
+
+.fc-card {
+  background: var(--fc-white);
+  border-radius: var(--fc-radius-xl);
+  box-shadow: var(--fc-shadow-sm);
+}
+
+.fc-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  border-radius: var(--fc-radius-pill); padding: 6px 14px;
+  font-size: 13px; font-weight: 700;
+}
