@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
-import { subscribeCounters, subscribeTicketsToday } from '../lib/queue';
-import type { Counter, Ticket } from '../types';
+import { subscribeAppointmentsToday, subscribeCounters, subscribeTicketsToday } from '../lib/queue';
+import type { Appointment, Counter, Ticket } from '../types';
 
 const SLA_MINUTES = 15;
 
@@ -14,6 +14,7 @@ export function Dashboard() {
   const { profile, logout } = useAuth();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [counters, setCounters] = useState<Counter[]>([]);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
 
   const institutionId = profile?.institutionId ?? '';
   const branchId = profile?.branchId ?? '';
@@ -22,9 +23,11 @@ export function Dashboard() {
     if (!institutionId || !branchId) return;
     const unsubTickets = subscribeTicketsToday(institutionId, branchId, setTickets);
     const unsubCounters = subscribeCounters(institutionId, branchId, setCounters);
+    const unsubAppointments = subscribeAppointmentsToday(institutionId, branchId, setAppointments);
     return () => {
       unsubTickets();
       unsubCounters();
+      unsubAppointments();
     };
   }, [institutionId, branchId]);
 
@@ -36,6 +39,10 @@ export function Dashboard() {
     .map((t) => Math.round((t.calledAt! - t.createdAt) / 60000));
   const avgWait = average(waitTimes);
   const activeCounters = counters.filter((c) => c.status !== 'paused').length;
+  const appointmentsToday = appointments.filter((a) => a.status !== 'cancelled').length;
+  const customerCancelled = tickets.filter((t) => t.noShowReason === 'customer_cancelled').length;
+  const staffMarkedNoShow = tickets.filter((t) => t.noShowReason === 'staff_marked').length;
+  const transferredCount = tickets.filter((t) => t.wasTransferred).length;
   const slaBreaches = counters.filter((c) => {
     if (!c.currentTicketId) return false;
     const t = tickets.find((tk) => tk.id === c.currentTicketId);
@@ -86,6 +93,29 @@ export function Dashboard() {
           <div style={{ fontSize: 40, fontWeight: 800, color: 'var(--fc-blue-dark)' }}>
             {activeCounters} <span style={{ fontSize: 18, fontWeight: 600, color: 'var(--fc-text-secondary)' }}>/ {counters.length}</span>
           </div>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0,1fr))', gap: 20 }}>
+        <div className="fc-card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--fc-text-secondary)' }}>Senhas emitidas hoje</div>
+          <div style={{ fontSize: 30, fontWeight: 800, color: 'var(--fc-blue-dark)' }}>{tickets.length}</div>
+        </div>
+        <div className="fc-card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--fc-text-secondary)' }}>Agendamentos hoje</div>
+          <div style={{ fontSize: 30, fontWeight: 800, color: 'var(--fc-blue-dark)' }}>{appointmentsToday}</div>
+        </div>
+        <div className="fc-card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--fc-text-secondary)' }}>Cancelamentos (cliente)</div>
+          <div style={{ fontSize: 30, fontWeight: 800, color: 'var(--fc-danger)' }}>{customerCancelled}</div>
+        </div>
+        <div className="fc-card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--fc-text-secondary)' }}>Não compareceram</div>
+          <div style={{ fontSize: 30, fontWeight: 800, color: 'var(--fc-danger)' }}>{staffMarkedNoShow}</div>
+        </div>
+        <div className="fc-card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--fc-text-secondary)' }}>Reencaminhados</div>
+          <div style={{ fontSize: 30, fontWeight: 800, color: 'var(--fc-orange)' }}>{transferredCount}</div>
         </div>
       </div>
 
