@@ -318,6 +318,34 @@ export function subscribeRatingsToday(
   return watchTable('ratings', branchId, refetch);
 }
 
+/** Tempo médio de espera hoje (minutos) -- agregado calculado no
+ * servidor (`branch_wait_stats`), nunca linhas de `tickets` (o painel de
+ * TV usa sessão anónima, que já não consegue ler `tickets` linha a
+ * linha desde o hardening de segurança -- ver docs/security-rls.md).
+ * Sem Realtime possível aqui (uma sessão anónima não recebe eventos de
+ * mudança de senhas doutros clientes); em alternativa, reavaliado a
+ * cada 30s -- suficiente para uma média, não para "à letra". */
+export function subscribeBranchWaitStats(
+  institutionId: string,
+  branchId: string,
+  onChange: (avgMinutes: number | null) => void,
+) {
+  let cancelled = false;
+  async function refetch() {
+    const { data } = await supabase.rpc('branch_wait_stats', {
+      p_institution_id: institutionId,
+      p_branch_id: branchId,
+    });
+    if (!cancelled) onChange(data === null || data === undefined ? null : Number(data));
+  }
+  refetch();
+  const id = setInterval(refetch, 30_000);
+  return () => {
+    cancelled = true;
+    clearInterval(id);
+  };
+}
+
 async function rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.rpc(fn, args);
   if (error) throw new Error(error.message);

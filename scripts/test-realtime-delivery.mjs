@@ -177,27 +177,29 @@ async function main() {
   await agent.rpc('set_counter_paused', { p_institution_id: 'siac', p_branch_id: 'balcao-talatona', p_counter_id: 'guiche-1', p_paused: false });
   await agent.rpc('complete_current', { p_institution_id: 'siac', p_branch_id: 'balcao-talatona', p_counter_id: 'guiche-1' });
 
-  // --- Cenário 8a: `tickets` é de leitura aberta a qualquer autenticado
-  // por desenho (security.md, Decisão 1 -- réplica do Firestore original,
-  // já aprovado antes desta fase). Isto confirma esse desenho também se
-  // aplica ao Realtime (não é um "bug" -- é o comportamento documentado,
-  // sinalizado no relatório final como decisão a rever, não corrigido
-  // aqui sem aprovação).
-  console.log('\n8a. tickets: leitura aberta por desenho -- confirmar que o Realtime também segue essa regra (não é isolado por cliente)');
+  // --- Cenário 8a (actualizado pelo hardening de segurança -- ver
+  // supabase/migrations/20260906220000_least_privilege_hardening.sql e
+  // docs/security-rls.md): `tickets` deixou de ter leitura aberta a
+  // qualquer autenticado. Um segundo cliente já NÃO deve receber, via
+  // Realtime, eventos de uma senha que não é dele. Cobertura mais
+  // extensa (cruzando instituição/filial/papel) em
+  // scripts/test-security-hardening.mjs.
+  console.log('\n8a. tickets: least privilege -- cliente B NÃO recebe eventos de uma senha de outro cliente (antes desta fase, recebia)');
   const email2 = `teste-realtime-b-${Date.now()}@example.com`;
   const customerBId = await createTestCustomer(email2, 'senha123456');
   const customerB = client();
   await customerB.auth.signInWithPassword({ email: email2, password: 'senha123456' });
   const { data: pulledA } = await customer.rpc('pull_ticket', { p_institution_id: 'siac', p_branch_id: 'balcao-talatona', p_service: 'Passaporte e Residência' });
   const openReadChannel = customerB.channel(`rt-test-open-read-${pulledA.id}`);
-  const openReadEvent = waitForEvent(openReadChannel, 'tickets', (p) => p.new.id === pulledA.id && p.new.status === 'serving');
+  let sawOpenReadEvent = false;
+  openReadChannel.on('postgres_changes', { event: '*', schema: 'public', table: 'tickets', filter: `id=eq.${pulledA.id}` }, () => { sawOpenReadEvent = true; });
   await subscribed(openReadChannel);
   await agent.rpc('call_next', { p_institution_id: 'siac', p_branch_id: 'balcao-talatona', p_counter_id: 'guiche-1' });
-  try {
-    await openReadEvent;
-    ok('confirmado: cliente B recebe eventos de tickets de outro cliente -- comportamento intencional herdado do Firestore, não uma regressão desta fase (ver relatório)');
-  } catch (e) {
-    fail('esperava-se que tickets fosse legível institucionalmente (Decisão 1) -- comportamento mudou sem explicação', e.message);
+  await new Promise((r) => setTimeout(r, 4000));
+  if (!sawOpenReadEvent) {
+    ok('cliente B não recebeu nenhum evento da senha do cliente A -- hardening confirmado também via Realtime');
+  } else {
+    fail('cliente B recebeu um evento de tickets que não devia ver -- FUGA DE DADOS', '');
   }
   await customerB.removeChannel(openReadChannel);
   await agent.rpc('complete_current', { p_institution_id: 'siac', p_branch_id: 'balcao-talatona', p_counter_id: 'guiche-1' });

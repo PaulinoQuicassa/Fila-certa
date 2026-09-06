@@ -122,6 +122,47 @@ recepção do evento certo com timeout:
   mudança do `Stream`/`ValueNotifier`, sem lógica condicional que
   pudesse escapar disto), não por um teste automatizado dedicado.
 
+## Hardening de segurança (least privilege, pré-Fase 10)
+
+Depois do achado da Fase 8 (leitura aberta de `tickets`/`counters`/
+`ticket_calls`), foi pedido um hardening dedicado antes de avançar para
+a Fase 10. Ver `docs/security-rls.md` para a auditoria e matriz de
+acesso completas. Testes novos:
+
+### `scripts/test-security-hardening.mjs` — os 10 cenários pedidos
+
+Sempre a testar REST **e** Realtime onde fizer sentido (nunca só um dos
+dois), incluindo uma filial temporária criada só para o teste (os dados
+de seed só tinham 1 filial por instituição, insuficiente para testar
+isolamento entre filiais):
+
+| # | Cenário | Resultado |
+|---|---|---|
+| 1 | Cliente A → próprio ticket | ✅ |
+| 2 | Cliente A → ticket do Cliente B (REST + Realtime) | ✅ bloqueado nos dois planos |
+| 3 | Cliente A → ticket de outra instituição | ✅ bloqueado |
+| 4 | Cliente A → ticket de outra filial (mesma instituição) | ✅ bloqueado |
+| 5 | Atendente → tickets da própria filial | ✅ permitido |
+| 6 | Atendente → tickets/RPC de outra filial | ✅ bloqueado nos dois planos (REST e `call_next`) |
+| 7 | Gestor → dados do seu âmbito | ✅ permitido |
+| 8 | Gestor → dados fora do seu âmbito | ✅ bloqueado |
+| 9 | Realtime → evento autorizado (própria senha) | ✅ |
+| 10 | Realtime → evento não autorizado (senha alheia) | ✅ bloqueado |
+
+### Regressão funcional completa (secção 9 do pedido)
+
+Re-executados depois do hardening, todos ✅: `scripts/test-realtime-delivery.mjs`
+(9 cenários, incluindo o 8a actualizado para confirmar o novo
+isolamento em vez do comportamento antigo), `scripts/test-phase12.mjs`
+(concorrência entre balcões + RBAC), `test-phase9.mjs`
+(ciclo completo tirar→chamar→a caminho→concluir→transferir→cancelar),
+`test-flutter-data-paths.mjs` (notifications/user_settings/appointments/
+ratings), e o novo `scripts/test-public-aggregates.mjs` (os três
+agregados que substituem leituras agora bloqueadas).
+
+**Nenhuma regressão encontrada** — todos os cenários que já
+funcionavam antes do hardening continuam a funcionar depois.
+
 ## Testes pendentes (fora do âmbito da Fase 8)
 
 - Reescrita de `test/widget_test.dart` (ver secção do gap acima).

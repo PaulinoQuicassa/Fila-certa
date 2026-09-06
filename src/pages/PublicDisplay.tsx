@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../supabase';
-import { subscribeLiveBoard, subscribeTicketsToday } from '../lib/queue';
-import type { LiveBoard, Ticket } from '../types';
+import { subscribeBranchWaitStats, subscribeLiveBoard } from '../lib/queue';
+import type { LiveBoard } from '../types';
 
 /** Toca um sinal sonoro de duas notas (ding-dong) sem depender de um
  * ficheiro de áudio — gerado via Web Audio API. */
@@ -33,16 +33,9 @@ const INSTITUTION_ID = import.meta.env.VITE_INSTITUTION_ID ?? 'banco-exemplo';
 const BRANCH_ID = import.meta.env.VITE_BRANCH_ID ?? 'agencia-maianga';
 const INSTITUTION_NAME = import.meta.env.VITE_INSTITUTION_NAME ?? 'Banco Exemplo · Agência Maianga';
 
-function average(tickets: Ticket[]): number | null {
-  const done = tickets.filter((t) => t.calledAt && t.createdAt);
-  if (done.length === 0) return null;
-  const total = done.reduce((sum, t) => sum + (t.calledAt! - t.createdAt), 0);
-  return Math.round(total / done.length / 60000);
-}
-
 export function PublicDisplay() {
   const [board, setBoard] = useState<LiveBoard>({ current: null, history: [], updatedAt: null });
-  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [avg, setAvg] = useState<number | null>(null);
   const [time, setTime] = useState(() => new Date());
   const [ready, setReady] = useState(false);
   const lastCalledAt = useRef<number | null>(null);
@@ -65,10 +58,10 @@ export function PublicDisplay() {
   useEffect(() => {
     if (!ready) return;
     const unsubBoard = subscribeLiveBoard(INSTITUTION_ID, BRANCH_ID, setBoard);
-    const unsubTickets = subscribeTicketsToday(INSTITUTION_ID, BRANCH_ID, setTickets);
+    const unsubStats = subscribeBranchWaitStats(INSTITUTION_ID, BRANCH_ID, setAvg);
     return () => {
       unsubBoard();
-      unsubTickets();
+      unsubStats();
     };
   }, [ready]);
 
@@ -77,7 +70,6 @@ export function PublicDisplay() {
     return () => clearInterval(id);
   }, []);
 
-  const avg = average(tickets);
   const timeLabel = time.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
 
   return (

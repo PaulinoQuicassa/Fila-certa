@@ -50,7 +50,22 @@ uma instituição/agência/conta de staff, nunca durante o uso normal da
 fila). Activar Realtime nelas seria trabalho sem consumidor, contra o
 pedido explícito de não activar indiscriminadamente.
 
-## Decisão pendente — leitura aberta de `tickets`/`counters`/`ticket_calls`
+## Decisão resolvida — leitura aberta de `tickets`/`counters`/`ticket_calls`
+
+**Actualização**: a decisão pendente descrita abaixo foi resolvida —
+o utilizador aprovou a opção recomendada (least privilege) e o
+hardening foi implementado, testado e documentado em
+`docs/security-rls.md` (matriz de acesso completa) e
+`supabase/migrations/20260906220000_least_privilege_hardening.sql`.
+Resumo: `tickets` passou a exigir `customer_id = auth.uid() OR
+is_staff_of_branch(institution_id, branch_id)`; `counters` exige
+`is_staff_of_branch(...)` ou ser o cliente atendido nesse balcão neste
+momento; `ticket_calls` exige `is_staff_of_branch(...)`, sessão anónima,
+ou ter uma senha activa nessa filial. O texto original da análise
+fica abaixo, para contexto de como se chegou à decisão.
+
+<details>
+<summary>Análise original (antes da decisão)</summary>
 
 **Problema**: `tickets`, `counters` e `ticket_calls` têm política de
 `SELECT` aberta a qualquer utilizador `authenticated` (não só
@@ -102,6 +117,36 @@ exactamente o tipo de decisão que pediste para eu parar e apresentar.
 ao que já existia (aprovado) desde a Fase 5, só passou a ser mais fácil
 de explorar ao vivo. Não bloqueia a Fase 10 nem nenhuma funcionalidade
 actual.
+
+</details>
+
+## Agregados públicos-operacionais (introduzidos pelo hardening)
+
+Fechar o SELECT de `tickets` quebraria três leituras que, na verdade,
+só precisavam de um agregado, nunca das linhas em si — corrigido com
+três funções `SECURITY DEFINER` novas (nunca tabelas novas):
+
+- **`branch_queue_summary(institution_id, branch_id)`** → `(service,
+  waiting_count)` — substitui `subscribeQueueSize`/
+  `subscribeWaitingServiceNames` (Flutter), que antes liam `tickets`
+  linha a linha só para contar.
+- **`branch_wait_stats(institution_id, branch_id)`** → média de espera
+  em minutos hoje — substitui o cálculo que o `PublicDisplay.tsx` fazia
+  no cliente a partir de `subscribeTicketsToday` (a sessão anónima já
+  não consegue ler essas linhas).
+- **`waiting_ahead_count(ticket_id)`** → posição na fila — substitui
+  `subscribeWaitingAhead`; confirma a posse da senha antes de contar.
+
+**Trade-off aceite conscientemente**: estas três deixaram de reagir a
+`postgres_changes` (um cliente sem senha activa nessa filial já não
+recebe eventos de mudança de linhas alheias, por desenho) — passaram a
+ser reavaliadas a um intervalo fixo em vez de "empurradas":
+`branch_wait_stats` a cada 30s (React), `branch_queue_summary` a cada
+15s e `waiting_ahead_count` a cada 10s (Flutter). É uma perda de
+"instantaneidade" para três indicadores que já eram aproximados por
+natureza (contagens/médias/posição-antes-de-entrar), em troca de
+fechar uma exposição real de dados. Validado com
+`scripts/test-public-aggregates.mjs`.
 
 ## Lifecycle: subscribe/unsubscribe/reconexão
 
