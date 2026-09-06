@@ -15,6 +15,7 @@
     "deploy:rules": "firebase deploy --only firestore:rules --project filacerta-d74f0"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.115.0",
     "firebase": "^12.18.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

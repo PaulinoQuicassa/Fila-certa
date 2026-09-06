@@ -173,7 +173,7 @@ export function AgentScreen() {
                   <button
                     className="fc-btn fc-btn--secondary"
                     disabled={busy}
-                    onClick={() => run(() => markNoShow(institutionId, branchId, counterId, currentTicket.id))}
+                    onClick={() => run(() => markNoShow(institutionId, branchId, counterId))}
                   >
                     Libertar Balcão
                   </button>
@@ -186,7 +186,7 @@ export function AgentScreen() {
                 <button
                   className="fc-btn fc-btn--success"
                   disabled={busy}
-                  onClick={() => run(() => completeCurrent(institutionId, branchId, counterId, currentTicket.id))}
+                  onClick={() => run(() => completeCurrent(institutionId, branchId, counterId))}
                 >
                   Concluir Atendimento
                 </button>
@@ -194,7 +194,7 @@ export function AgentScreen() {
                   <button
                     className="fc-btn fc-btn--secondary"
                     disabled={busy}
-                    onClick={() => run(() => recallCurrent(institutionId, branchId, counter!.label, currentTicket))}
+                    onClick={() => run(() => recallCurrent(institutionId, branchId, counterId))}
                   >
                     Chamar Novamente
                   </button>
@@ -202,7 +202,7 @@ export function AgentScreen() {
                     className="fc-btn fc-btn--secondary"
                     style={{ color: 'var(--fc-danger)' }}
                     disabled={busy}
-                    onClick={() => run(() => markNoShow(institutionId, branchId, counterId, currentTicket.id))}
+                    onClick={() => run(() => markNoShow(institutionId, branchId, counterId))}
                   >
                     Não Compareceu
                   </button>
@@ -229,7 +229,7 @@ export function AgentScreen() {
                             disabled={busy}
                             onClick={() => {
                               setTransferOpen(false);
-                              run(() => transferTicket(institutionId, branchId, counterId, currentTicket.id, c.id));
+                              run(() => transferTicket(institutionId, branchId, counterId, c.id));
                             }}
                             style={{ textAlign: 'left', padding: '8px 10px', borderRadius: 'var(--fc-radius-md)', fontSize: 13.5, fontWeight: 600 }}
                           >
@@ -258,9 +258,7 @@ export function AgentScreen() {
                 className="fc-btn fc-btn--primary"
                 style={{ maxWidth: 280 }}
                 disabled={busy || isPaused || eligibleQueue.length === 0}
-                onClick={() =>
-                  run(() => callNext(institutionId, branchId, counterId, counter!.label, profile.name, eligibleQueue[0]))
-                }
+                onClick={() => run(() => callNext(institutionId, branchId, counterId))}
               >
                 Chamar Próxima →
               </button>

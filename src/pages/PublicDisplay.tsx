@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { signInAnonymously } from 'firebase/auth';
-import { auth } from '../firebase';
+import { supabase } from '../supabase';
 import { subscribeLiveBoard, subscribeTicketsToday } from '../lib/queue';
 import type { LiveBoard, Ticket } from '../types';
 
@@ -49,7 +48,10 @@ export function PublicDisplay() {
   const lastCalledAt = useRef<number | null>(null);
 
   useEffect(() => {
-    signInAnonymously(auth).finally(() => setReady(true));
+    supabase.auth
+      .getSession()
+      .then(({ data }) => (data.session ? null : supabase.auth.signInAnonymously()))
+      .finally(() => setReady(true));
   }, []);
 
   useEffect(() => {

@@ -1,56 +1,84 @@
-import {
-  collection,
-  doc,
-  onSnapshot,
-  query,
-  runTransaction,
-  serverTimestamp,
-  Timestamp,
-  where,
-} from 'firebase/firestore';
-import { db } from '../firebase';
+import { supabase } from '../supabase';
 import type { Appointment, Counter, LiveBoard, Rating, Ticket } from '../types';
 
-function branchPath(institutionId: string, branchId: string) {
-  return `institutions/${institutionId}/branches/${branchId}`;
+function toMillis(value: string | null | undefined): number | null {
+  return value ? new Date(value).getTime() : null;
 }
 
-function toMillis(value: Timestamp | null | undefined): number | null {
-  return value ? value.toMillis() : null;
-}
+type TicketRow = {
+  id: string;
+  code: string;
+  service: string;
+  priority: boolean;
+  status: Ticket['status'];
+  counter_id: string | null;
+  created_at: string;
+  called_at: string | null;
+  done_at: string | null;
+  transferred_to_counter_id: string | null;
+  no_show_reason: Ticket['noShowReason'];
+  was_transferred: boolean;
+  customer_on_the_way: boolean;
+};
 
-function ticketFromDoc(id: string, data: Record<string, unknown>): Ticket {
+function ticketFromRow(row: TicketRow): Ticket {
   return {
-    id,
-    code: data.code as string,
-    service: data.service as string,
-    priority: Boolean(data.priority),
-    status: data.status as Ticket['status'],
-    counterId: (data.counterId as string | null) ?? null,
-    createdAt: toMillis(data.createdAt as Timestamp) ?? Date.now(),
-    calledAt: toMillis(data.calledAt as Timestamp),
-    doneAt: toMillis(data.doneAt as Timestamp),
-    transferredToCounterId: (data.transferredToCounterId as string | null) ?? null,
-    noShowReason: (data.noShowReason as Ticket['noShowReason']) ?? null,
-    wasTransferred: Boolean(data.wasTransferred),
-    customerOnTheWay: Boolean(data.customerOnTheWay),
+    id: row.id,
+    code: row.code,
+    service: row.service,
+    priority: row.priority,
+    status: row.status,
+    counterId: row.counter_id,
+    createdAt: toMillis(row.created_at) ?? Date.now(),
+    calledAt: toMillis(row.called_at),
+    doneAt: toMillis(row.done_at),
+    transferredToCounterId: row.transferred_to_counter_id,
+    noShowReason: row.no_show_reason,
+    wasTransferred: row.was_transferred,
+    customerOnTheWay: row.customer_on_the_way,
   };
 }
 
-/** Fila de espera ordenada por criação — filtro simples (sem orderBy no
- * servidor) para não exigir um índice composto no Firestore. */
+const TICKET_COLUMNS =
+  'id, code, service, priority, status, counter_id, created_at, called_at, done_at, transferred_to_counter_id, no_show_reason, was_transferred, customer_on_the_way';
+
+/** Assina mudanças numa tabela filtrada por `branch_id` e chama `refetch`
+ * sempre que algo muda -- o filtro do canal só decide QUANDO voltar a ler,
+ * a query de `refetch` é sempre a fonte da verdade (sempre filtrada por
+ * institution_id + branch_id), por isso é seguro mesmo que dois IDs de
+ * branch coincidam entre instituições diferentes. */
+function watchTable(table: string, branchId: string, refetch: () => void) {
+  const channel = supabase
+    .channel(`${table}:${branchId}:${Math.random().toString(36).slice(2)}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table, filter: `branch_id=eq.${branchId}` },
+      refetch,
+    )
+    .subscribe();
+  return () => {
+    void supabase.removeChannel(channel);
+  };
+}
+
+/** Fila de espera ordenada por criação. */
 export function subscribeWaitingQueue(
   institutionId: string,
   branchId: string,
   onChange: (tickets: Ticket[]) => void,
 ) {
-  const ticketsRef = collection(db, `${branchPath(institutionId, branchId)}/tickets`);
-  const q = query(ticketsRef, where('status', '==', 'waiting'));
-  return onSnapshot(q, (snap) => {
-    const tickets = snap.docs.map((d) => ticketFromDoc(d.id, d.data()));
-    tickets.sort((a, b) => a.createdAt - b.createdAt);
-    onChange(tickets);
-  });
+  async function refetch() {
+    const { data } = await supabase
+      .from('tickets')
+      .select(TICKET_COLUMNS)
+      .eq('institution_id', institutionId)
+      .eq('branch_id', branchId)
+      .eq('status', 'waiting')
+      .order('created_at', { ascending: true });
+    onChange((data ?? []).map(ticketFromRow));
+  }
+  refetch();
+  return watchTable('tickets', branchId, refetch);
 }
 
 export function subscribeTicket(
@@ -59,11 +87,33 @@ export function subscribeTicket(
   ticketId: string,
   onChange: (ticket: Ticket | null) => void,
 ) {
-  const ref = doc(db, `${branchPath(institutionId, branchId)}/tickets/${ticketId}`);
-  return onSnapshot(ref, (snap) => {
-    onChange(snap.exists() ? ticketFromDoc(snap.id, snap.data()) : null);
-  });
+  async function refetch() {
+    const { data } = await supabase
+      .from('tickets')
+      .select(TICKET_COLUMNS)
+      .eq('institution_id', institutionId)
+      .eq('branch_id', branchId)
+      .eq('id', ticketId)
+      .maybeSingle();
+    onChange(data ? ticketFromRow(data) : null);
+  }
+  refetch();
+  const channel = supabase
+    .channel(`ticket:${ticketId}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets', filter: `id=eq.${ticketId}` }, refetch)
+    .subscribe();
+  return () => {
+    supabase.removeChannel(channel);
+  };
 }
+
+type CounterRow = {
+  id: string;
+  label: string;
+  status: Counter['status'];
+  current_ticket_id: string | null;
+  current_agent_name: string | null;
+};
 
 export function subscribeCounter(
   institutionId: string,
@@ -71,18 +121,28 @@ export function subscribeCounter(
   counterId: string,
   onChange: (counter: Counter | null) => void,
 ) {
-  const ref = doc(db, `${branchPath(institutionId, branchId)}/counters/${counterId}`);
-  return onSnapshot(ref, (snap) => {
-    if (!snap.exists()) return onChange(null);
-    const data = snap.data();
-    onChange({
-      id: snap.id,
-      label: data.label,
-      status: data.status,
-      currentTicketId: data.currentTicketId ?? null,
-      agentName: data.agentName ?? null,
-    });
-  });
+  async function refetch() {
+    const { data } = await supabase
+      .from('counters_with_agent')
+      .select('id, label, status, current_ticket_id, current_agent_name')
+      .eq('institution_id', institutionId)
+      .eq('branch_id', branchId)
+      .eq('id', counterId)
+      .maybeSingle();
+    onChange(data ? counterFromRow(data) : null);
+  }
+  refetch();
+  return watchTable('counters', branchId, refetch);
+}
+
+function counterFromRow(row: CounterRow): Counter {
+  return {
+    id: row.id,
+    label: row.label,
+    status: row.status,
+    currentTicketId: row.current_ticket_id,
+    agentName: row.current_agent_name,
+  };
 }
 
 export function subscribeCounters(
@@ -90,21 +150,17 @@ export function subscribeCounters(
   branchId: string,
   onChange: (counters: Counter[]) => void,
 ) {
-  const ref = collection(db, `${branchPath(institutionId, branchId)}/counters`);
-  return onSnapshot(ref, (snap) => {
-    const counters = snap.docs.map((d) => {
-      const data = d.data();
-      return {
-        id: d.id,
-        label: data.label,
-        status: data.status,
-        currentTicketId: data.currentTicketId ?? null,
-        agentName: data.agentName ?? null,
-      } as Counter;
-    });
-    counters.sort((a, b) => a.label.localeCompare(b.label));
-    onChange(counters);
-  });
+  async function refetch() {
+    const { data } = await supabase
+      .from('counters_with_agent')
+      .select('id, label, status, current_ticket_id, current_agent_name')
+      .eq('institution_id', institutionId)
+      .eq('branch_id', branchId)
+      .order('label', { ascending: true });
+    onChange((data ?? []).map(counterFromRow));
+  }
+  refetch();
+  return watchTable('counters', branchId, refetch);
 }
 
 export function subscribeLiveBoard(
@@ -112,21 +168,31 @@ export function subscribeLiveBoard(
   branchId: string,
   onChange: (board: LiveBoard) => void,
 ) {
-  const ref = doc(db, `${branchPath(institutionId, branchId)}/liveBoard/current`);
-  return onSnapshot(ref, (snap) => {
-    if (!snap.exists()) {
-      return onChange({ current: null, history: [], updatedAt: null });
+  async function refetch() {
+    const { data } = await supabase
+      .from('ticket_calls')
+      .select('code, counter_label, called_at')
+      .eq('institution_id', institutionId)
+      .eq('branch_id', branchId)
+      .order('called_at', { ascending: false })
+      .limit(5);
+    const rows = data ?? [];
+    if (rows.length === 0) {
+      onChange({ current: null, history: [], updatedAt: null });
+      return;
     }
-    const data = snap.data();
+    const [current, ...history] = rows;
     onChange({
-      current: data.current ?? null,
-      history: data.history ?? [],
-      updatedAt: toMillis(data.updatedAt as Timestamp),
+      current: { code: current.code, counterLabel: current.counter_label },
+      history: history.map((h) => ({ code: h.code, counterLabel: h.counter_label })),
+      updatedAt: toMillis(current.called_at),
     });
-  });
+  }
+  refetch();
+  return watchTable('ticket_calls', branchId, refetch);
 }
 
-/** Todas as senhas criadas hoje — para o dashboard calcular métricas no
+/** Todas as senhas criadas hoje -- para o dashboard calcular métricas no
  * cliente (volume baixo esperado num piloto; evita agregações no servidor). */
 export function subscribeTicketsToday(
   institutionId: string,
@@ -135,28 +201,43 @@ export function subscribeTicketsToday(
 ) {
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
-  const ticketsRef = collection(db, `${branchPath(institutionId, branchId)}/tickets`);
-  const q = query(ticketsRef, where('createdAt', '>=', Timestamp.fromDate(startOfDay)));
-  return onSnapshot(q, (snap) => {
-    onChange(snap.docs.map((d) => ticketFromDoc(d.id, d.data())));
-  });
+  async function refetch() {
+    const { data } = await supabase
+      .from('tickets')
+      .select(TICKET_COLUMNS)
+      .eq('institution_id', institutionId)
+      .eq('branch_id', branchId)
+      .gte('created_at', startOfDay.toISOString());
+    onChange((data ?? []).map(ticketFromRow));
+  }
+  refetch();
+  return watchTable('tickets', branchId, refetch);
 }
 
-function appointmentFromDoc(id: string, data: Record<string, unknown>): Appointment {
+type AppointmentRow = {
+  id: string;
+  customer_id: string;
+  service: string;
+  date: string;
+  time: string;
+  created_at: string;
+  status: Appointment['status'];
+};
+
+function appointmentFromRow(row: AppointmentRow): Appointment {
   return {
-    id,
-    customerUid: data.customerUid as string,
-    serviceName: data.serviceName as string,
-    date: toMillis(data.date as Timestamp) ?? Date.now(),
-    time: data.time as string,
-    createdAt: toMillis(data.createdAt as Timestamp) ?? Date.now(),
-    status: (data.status as Appointment['status']) ?? 'scheduled',
+    id: row.id,
+    customerUid: row.customer_id,
+    serviceName: row.service,
+    date: toMillis(row.date) ?? Date.now(),
+    time: row.time,
+    createdAt: toMillis(row.created_at) ?? Date.now(),
+    status: row.status,
   };
 }
 
-/** Agendamentos marcados hoje para esta agência — espelho institucional
- * (visível à equipa) de users/{uid}/appointments, escrito pela app do
- * cliente só para a localização piloto. */
+/** Agendamentos marcados hoje para esta agência (tabela `appointments`
+ * unificada -- ver docs/database-design.md). */
 export function subscribeAppointmentsToday(
   institutionId: string,
   branchId: string,
@@ -164,34 +245,53 @@ export function subscribeAppointmentsToday(
 ) {
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
-  const appointmentsRef = collection(db, `${branchPath(institutionId, branchId)}/appointments`);
-  const q = query(appointmentsRef, where('createdAt', '>=', Timestamp.fromDate(startOfDay)));
-  return onSnapshot(q, (snap) => {
-    onChange(snap.docs.map((d) => appointmentFromDoc(d.id, d.data())));
-  });
+  async function refetch() {
+    const { data } = await supabase
+      .from('appointments')
+      .select('id, customer_id, service, date, time, created_at, status')
+      .eq('institution_id', institutionId)
+      .eq('branch_id', branchId)
+      .gte('created_at', startOfDay.toISOString());
+    onChange((data ?? []).map(appointmentFromRow));
+  }
+  refetch();
+  return watchTable('appointments', branchId, refetch);
 }
 
-function ratingFromDoc(id: string, data: Record<string, unknown>): Rating {
-  const aspects = (data.aspects as Record<string, number>) ?? {};
+type RatingRow = {
+  id: string;
+  customer_id: string;
+  service: string;
+  overall: number;
+  recommend: boolean;
+  comment: string;
+  aspect_atendimento: number;
+  aspect_tempo_espera: number;
+  aspect_organizacao: number;
+  aspect_instalacoes: number;
+  created_at: string;
+};
+
+function ratingFromRow(row: RatingRow): Rating {
   return {
-    id,
-    customerUid: data.customerUid as string,
-    serviceName: data.serviceName as string,
-    overall: Number(data.overall) || 0,
-    recommend: Boolean(data.recommend),
-    comment: (data.comment as string) ?? '',
+    id: row.id,
+    customerUid: row.customer_id,
+    serviceName: row.service,
+    overall: row.overall,
+    recommend: row.recommend,
+    comment: row.comment,
     aspects: {
-      atendimento: Number(aspects.atendimento) || 0,
-      tempoEspera: Number(aspects.tempoEspera) || 0,
-      organizacao: Number(aspects.organizacao) || 0,
-      instalacoes: Number(aspects.instalacoes) || 0,
+      atendimento: row.aspect_atendimento,
+      tempoEspera: row.aspect_tempo_espera,
+      organizacao: row.aspect_organizacao,
+      instalacoes: row.aspect_instalacoes,
     },
-    createdAt: toMillis(data.createdAt as Timestamp) ?? Date.now(),
+    createdAt: toMillis(row.created_at) ?? Date.now(),
   };
 }
 
-/** Avaliações submetidas hoje pelos clientes (RatingScreen), depois de
- * concluído o atendimento — alimenta o resumo de qualidade do dashboard. */
+/** Avaliações submetidas hoje pelos clientes, depois de concluído o
+ * atendimento -- alimenta o resumo de qualidade do dashboard. */
 export function subscribeRatingsToday(
   institutionId: string,
   branchId: string,
@@ -199,117 +299,47 @@ export function subscribeRatingsToday(
 ) {
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
-  const ratingsRef = collection(db, `${branchPath(institutionId, branchId)}/ratings`);
-  const q = query(ratingsRef, where('createdAt', '>=', Timestamp.fromDate(startOfDay)));
-  return onSnapshot(q, (snap) => {
-    onChange(snap.docs.map((d) => ratingFromDoc(d.id, d.data())));
-  });
+  async function refetch() {
+    const { data } = await supabase
+      .from('ratings')
+      .select(
+        'id, customer_id, service, overall, recommend, comment, aspect_atendimento, aspect_tempo_espera, aspect_organizacao, aspect_instalacoes, created_at',
+      )
+      .eq('institution_id', institutionId)
+      .eq('branch_id', branchId)
+      .gte('created_at', startOfDay.toISOString());
+    onChange((data ?? []).map(ratingFromRow));
+  }
+  refetch();
+  return watchTable('ratings', branchId, refetch);
 }
 
-/** Lê o estado actual do painel ao vivo (tem de acontecer antes de
- * qualquer escrita na transacção — o Firestore exige todas as leituras
- * antes de todas as escritas). Devolve uma função que aplica a escrita. */
-async function readLiveBoard(
-  transaction: import('firebase/firestore').Transaction,
-  institutionId: string,
-  branchId: string,
-) {
-  const boardRef = doc(db, `${branchPath(institutionId, branchId)}/liveBoard/current`);
-  const boardSnap = await transaction.get(boardRef);
-  const prevCurrent = boardSnap.exists() ? boardSnap.data().current : null;
-  const prevHistory = boardSnap.exists() ? (boardSnap.data().history ?? []) : [];
-  return (entry: { code: string; counterLabel: string }) => {
-    const nextHistory = prevCurrent ? [prevCurrent, ...prevHistory].slice(0, 4) : prevHistory;
-    transaction.set(boardRef, {
-      current: entry,
-      history: nextHistory,
-      updatedAt: serverTimestamp(),
-    });
-  };
+async function rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.rpc(fn, args);
+  if (error) throw new Error(error.message);
+  return data as T;
 }
 
-/** Chama a próxima senha em espera para o balcão do agente. */
-export async function callNext(
-  institutionId: string,
-  branchId: string,
-  counterId: string,
-  counterLabel: string,
-  agentName: string,
-  nextTicket: Ticket,
-) {
-  const ticketRef = doc(db, `${branchPath(institutionId, branchId)}/tickets/${nextTicket.id}`);
-  const counterRef = doc(db, `${branchPath(institutionId, branchId)}/counters/${counterId}`);
-
-  await runTransaction(db, async (transaction) => {
-    const writeLiveBoard = await readLiveBoard(transaction, institutionId, branchId);
-    transaction.update(ticketRef, {
-      status: 'serving',
-      counterId,
-      calledAt: serverTimestamp(),
-      transferredToCounterId: null,
-      customerOnTheWay: false,
-    });
-    transaction.update(counterRef, {
-      status: 'serving',
-      currentTicketId: nextTicket.id,
-      agentName,
-    });
-    writeLiveBoard({ code: nextTicket.code, counterLabel });
-  });
+/** Chama a próxima senha em espera para o balcão do agente -- a escolha
+ * da senha (por prioridade/transferência/ordem de chegada) é feita no
+ * servidor, com bloqueio (`SKIP LOCKED`) para nunca haver dois balcões a
+ * chamar a mesma senha em simultâneo (ver call_next() em
+ * supabase/migrations). */
+export async function callNext(institutionId: string, branchId: string, counterId: string) {
+  await rpc('call_next', { p_institution_id: institutionId, p_branch_id: branchId, p_counter_id: counterId });
 }
 
 /** Repete a chamada da senha actual (sem mudar estado, só o painel público). */
-export async function recallCurrent(
-  institutionId: string,
-  branchId: string,
-  counterLabel: string,
-  ticket: Ticket,
-) {
-  await runTransaction(db, async (transaction) => {
-    const writeLiveBoard = await readLiveBoard(transaction, institutionId, branchId);
-    writeLiveBoard({ code: ticket.code, counterLabel });
-  });
+export async function recallCurrent(institutionId: string, branchId: string, counterId: string) {
+  await rpc('recall_current', { p_institution_id: institutionId, p_branch_id: branchId, p_counter_id: counterId });
 }
 
-async function clearCounter(
-  institutionId: string,
-  branchId: string,
-  counterId: string,
-) {
-  const counterRef = doc(db, `${branchPath(institutionId, branchId)}/counters/${counterId}`);
-  await runTransaction(db, async (transaction) => {
-    transaction.update(counterRef, {
-      status: 'available',
-      currentTicketId: null,
-      agentName: null,
-    });
-  });
+export async function completeCurrent(institutionId: string, branchId: string, counterId: string) {
+  await rpc('complete_current', { p_institution_id: institutionId, p_branch_id: branchId, p_counter_id: counterId });
 }
 
-export async function completeCurrent(
-  institutionId: string,
-  branchId: string,
-  counterId: string,
-  ticketId: string,
-) {
-  const ticketRef = doc(db, `${branchPath(institutionId, branchId)}/tickets/${ticketId}`);
-  await runTransaction(db, async (transaction) => {
-    transaction.update(ticketRef, { status: 'done', doneAt: serverTimestamp() });
-  });
-  await clearCounter(institutionId, branchId, counterId);
-}
-
-export async function markNoShow(
-  institutionId: string,
-  branchId: string,
-  counterId: string,
-  ticketId: string,
-) {
-  const ticketRef = doc(db, `${branchPath(institutionId, branchId)}/tickets/${ticketId}`);
-  await runTransaction(db, async (transaction) => {
-    transaction.update(ticketRef, { status: 'no_show', doneAt: serverTimestamp(), noShowReason: 'staff_marked' });
-  });
-  await clearCounter(institutionId, branchId, counterId);
+export async function markNoShow(institutionId: string, branchId: string, counterId: string) {
+  await rpc('mark_no_show', { p_institution_id: institutionId, p_branch_id: branchId, p_counter_id: counterId });
 }
 
 /** Devolve a senha à fila de espera e liberta o balcão actual. Se
@@ -319,30 +349,21 @@ export async function transferTicket(
   institutionId: string,
   branchId: string,
   counterId: string,
-  ticketId: string,
   targetCounterId: string | null,
 ) {
-  const ticketRef = doc(db, `${branchPath(institutionId, branchId)}/tickets/${ticketId}`);
-  await runTransaction(db, async (transaction) => {
-    transaction.update(ticketRef, {
-      status: 'waiting',
-      counterId: null,
-      calledAt: null,
-      transferredToCounterId: targetCounterId,
-      wasTransferred: true,
-    });
+  await rpc('transfer_ticket', {
+    p_institution_id: institutionId,
+    p_branch_id: branchId,
+    p_counter_id: counterId,
+    p_target_counter_id: targetCounterId,
   });
-  await clearCounter(institutionId, branchId, counterId);
 }
 
-export async function setCounterPaused(
-  institutionId: string,
-  branchId: string,
-  counterId: string,
-  paused: boolean,
-) {
-  const counterRef = doc(db, `${branchPath(institutionId, branchId)}/counters/${counterId}`);
-  await runTransaction(db, async (transaction) => {
-    transaction.update(counterRef, { status: paused ? 'paused' : 'available' });
+export async function setCounterPaused(institutionId: string, branchId: string, counterId: string, paused: boolean) {
+  await rpc('set_counter_paused', {
+    p_institution_id: institutionId,
+    p_branch_id: branchId,
+    p_counter_id: counterId,
+    p_paused: paused,
   });
 }
