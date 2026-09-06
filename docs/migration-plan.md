@@ -1,0 +1,149 @@
+# Plano de migração — Firebase → Supabase (Fila Certa)
+
+Baseado em `firebase-audit.md` (o que existe) e `database-design.md`
+(para onde vai). Cada fase só avança depois de aprovação explícita —
+ver estado real de cada uma na tabela abaixo (Fases 0–2 documentais,
+3–5 já aplicadas ao projecto Supabase real; 6 em diante por fazer).
+
+## Resumo por fase (adaptado ao que a auditoria encontrou)
+
+Como não existem Cloud Functions, Storage nem FCM neste projecto
+(secção 2 da auditoria), as fases 7 e 9 do mandato ficam muito mais
+leves do que num projecto genérico — não há nada de facto para migrar
+nelas, só confirmar que continuam desnecessárias.
+
+| Fase | Conteúdo | Esforço estimado | Depende de |
+|---|---|---|---|
+| 0 | Backup | Exportar Firestore (`gcloud firestore export`) e lista de utilizadores Auth (`firebase auth:export`) antes de qualquer alteração | — |
+| 1 | Auditoria | ✅ Concluída — `firebase-audit.md` | — |
+| 2 | Modelação | ✅ Concluída — `database-design.md` | Fase 1 |
+| 3 | Configurar Supabase | ✅ **Concluída** — projecto `qdfpqispcntitvczybfl` criado pelo utilizador, ligado via `supabase link` em 2026-09-06 | — |
+| 4 | Migrations | ✅ **Escritas e aplicadas** — `supabase/migrations/20260906190000_initial_schema.sql`, aplicada ao projecto real via `supabase db push` em 2026-09-06 e verificada (11 tabelas + 5 enums confirmados via API de gestão) | Fase 3 |
+| 5 | RLS | ✅ **Escrita e aplicada** — `supabase/migrations/20260906190100_rls.sql` + `docs/security.md`. Verificado: RLS activo nas 11 tabelas, 16 políticas presentes exactamente como desenhadas | Fase 4 |
+| 6 | Auth | ✅ **Concluída** — as 12 contas de staff recriadas em Supabase Auth (mesmos emails, mesma password `teste123`), tabela `staff` populada, e `institutions`/`branches`/`counters` trazidos do Firestore como dados de referência (pré-requisito de `staff` via FK). Verificado por `JOIN` entre `staff` e `auth.users`: as 12 linhas batem certo. Contas de cliente de teste ainda por fazer (ver nota) | Fase 4 |
+| 7 | Storage | **Sem trabalho real** — confirmar que continua sem uso; não criar buckets sem necessidade concreta | — |
+| 8 | Realtime | Trocar `onSnapshot`/`.snapshots()` por `supabase.channel(...).on('postgres_changes', ...)` em cada um dos ~15 pontos de subscrição identificados na auditoria | Fase 4, 5 |
+| 9 | Functions | ✅ **Concluída e validada** — `supabase/migrations/20260906190200_rpc_functions.sql`: 12 funções `SECURITY DEFINER` (`pull_ticket`, `call_next`, `recall_current`, `complete_current`, `mark_no_show`, `transfer_ticket`, `set_counter_paused`, `cancel_ticket`, `set_on_the_way`, `next_appointment_code`, `schedule_appointment`, `cancel_appointment`). Testado de ponta a ponta com uma conta de cliente e a conta real do agente do SIAC: tirar senha → chamar → "a caminho" → concluir → transferir → cancelar, todos correctos; confirmado que um cliente não consegue chamar senhas (RBAC) nem fazer `UPDATE` directo às tabelas (RLS) | Fase 4 |
+| 10 | Flutter/React | Trocar `cloud_firestore`/`firebase` pelo SDK Supabase nos dois repos, camada por camada (`queue.ts`, `ticket_service.dart` primeiro, ecrãs depois) | Fases 6, 8, 9 |
+| 11 | Migração de dados | Script único (Node, reaproveitando o padrão dos scripts de seed actuais) a ler Firestore via Admin SDK e escrever em Postgres via Supabase Admin client | Fase 4 |
+| 12 | Testes | Ver secção de testes abaixo | Fase 10 |
+| 13 | Staging | Ambiente Supabase separado, apontado pelos dois repos numa branch de teste | Fase 12 |
+| 14 | Produção | Deploy final, DNS/hosting inalterados (continuam no Firebase Hosting — só o backend de dados muda) | Fase 13 aprovada |
+| 15 | Desligar Firebase | Só depois de um período de observação em produção sem regressões | Fase 14 estável |
+
+## Estratégia de autenticação (secções 11/12 do mandato)
+
+**Achado que simplifica esta fase**: é um piloto — todas as contas
+existentes (12 de staff + as de cliente de teste) usam passwords de
+teste conhecidas (`teste123` e afins), sem nenhum utilizador real.
+
+- **Se a migração ocorrer enquanto isto continuar verdade**: recriar
+  as contas directamente em Supabase Auth com as mesmas credenciais
+  (mesmo padrão dos scripts de seed actuais, adaptado ao Admin client
+  do Supabase). Sem necessidade de importar hashes de password.
+- **Se já existirem utilizadores reais nessa altura** (a confirmar
+  antes de executar a Fase 6): Firebase Auth exporta passwords com hash
+  `scrypt` num formato específico do projecto
+  (`firebase auth:export --format=json`); o GoTrue do Supabase não
+  suporta nativamente este formato de hash. A estratégia segura,
+  **sem nunca expor nem tentar re-derivar a password real**, é:
+  1. Importar os utilizadores para Supabase Auth com uma password
+     aleatória inutilizável (ou sem password, exigindo definição no
+     primeiro acesso);
+  2. Guardar o `firebase_uid` original numa coluna `legacy_firebase_uid`
+     em `staff`/perfil de cliente, só para rastreabilidade durante a
+     transição;
+  3. Enviar email de "definir nova password" (fluxo nativo do Supabase
+     Auth) a todos antes de desligar o login Firebase;
+  4. Manter os dois métodos de login activos (Firebase a ler, Supabase
+     a escrever) só durante a janela de transição, nunca mais do que o
+     estritamente necessário.
+
+## Migração de dados (Fase 11)
+
+Ordem de escrita (respeita as FKs definidas em `database-design.md`):
+
+```
+1. institutions
+2. branches
+3. auth.users (staff + clientes, via Fase 6)
+4. staff
+5. counters
+6. branch_counters (a partir do valor actual de meta/ticketSeq)
+7. tickets
+8. ticket_calls (reconstruído a partir do liveBoard/current + history existente, quando possível)
+9. appointments (unificando privado + espelho — usar o espelho institucional como fonte,
+   por já ter customerUid e institutionId; cruzar com o privado só para confirmar paridade)
+10. ratings
+11. notifications
+12. user_settings
+```
+
+Script único, correndo uma vez por ambiente (local → staging →
+produção), com contagem de documentos lidos vs. linhas escritas
+registada no fim, para detectar qualquer perda silenciosa.
+
+## Testes (secção 29/30 do mandato)
+
+Cenários derivados directamente dos fluxos reais já existentes (não
+inventados):
+
+- **Autenticação**: login staff, login/registo/recuperação cliente,
+  sessão anónima do painel de TV.
+- **Fila — caminho feliz**: tirar senha → aparecer na fila do agente →
+  `call_next` → cliente navega para "É a sua vez" → `complete_current`
+  → avaliação.
+- **Fila — casos já cobertos por bugs reais desta sessão**: duas
+  senhas em simultâneo para o mesmo cliente (o bug de
+  `activeTicketStore` só suportar uma) tem de continuar correcto depois
+  da migração; transferir para balcão específico; pausar balcão;
+  chamar novamente; não comparecer (ambas as origens,
+  `customer_cancelled` e `staff_marked`).
+- **Concorrência (secção 21)**: dois agentes a chamar
+  simultaneamente a partir do mesmo `branch_id` — confirmar que
+  `SKIP LOCKED` nunca deixa dois balcões com o mesmo `ticket_id`.
+- **Realtime**: abrir o mesmo `ticket_id` em duas abas/dispositivos e
+  confirmar que ambos recebem a mesma actualização de status.
+- **RLS por papel**: um agente de uma instituição nunca deve conseguir
+  ler/escrever senhas de outra instituição (testar com as 6
+  instituições já activas em produção); um cliente nunca deve conseguir
+  ler avaliações/agendamentos de outro `customer_id`.
+
+## Estratégia de rollback (secção 31)
+
+O Firebase **não é desligado nem apagado** em nenhuma fase anterior à
+15. Durante as fases 10–14, os dois backends coexistem:
+
+```
+Se um problema for encontrado em Staging/Produção com Supabase
+        ↓
+Reverter o deploy do frontend para a versão anterior (aponta a Firebase)
+        ↓
+Investigar e corrigir contra o schema Postgres
+        ↓
+Nova tentativa de deploy, sem repetir a migração de dados
+        (os dados em Postgres continuam válidos; só se corrige o código)
+```
+
+Não há alteração destrutiva ao Firestore em nenhuma fase — os dados
+Firebase ficam intactos e consultáveis até à Fase 15 ser
+explicitamente aprovada.
+
+## Riscos identificados
+
+| Risco | Mitigação |
+|---|---|
+| As Security Rules dos dois repos já dependem de sincronização manual (sem CI) — o mesmo risco existe para RLS entre migrations e código, se não forem geridas por versão única | Migrations e RLS vivem só num repo (`fila-certa-staff/supabase/`); os dois frontends apontam à mesma instância Supabase, sem cópia de regras por repo |
+| `call_next`/`transfer_ticket`/etc. tornam-se funções RPC — qualquer bug numa função `SECURITY DEFINER` tem mais poder do que o cliente tinha antes | Testes de concorrência (secção acima) obrigatórios antes de qualquer deploy a produção; `SECURITY DEFINER` sempre com `search_path` fixo, nunca `GRANT` directo a `service_role` para o cliente |
+| Duplicar `appointments` (privado+espelho) para uma tabela só pode mudar comportamento visível se algum ecrã depender implicitamente da separação | Testar explicitamente "Os meus agendamentos" e o dashboard do gestor lado a lado antes/depois |
+| Reescrever `liveBoard` como log append-only muda a forma como o histórico de 4 chamadas é lido | Confirmar visualmente o painel de TV e o "Última senha chamada" do cliente com dados reais antes de aprovar a Fase 14 |
+
+## Critério de sucesso desta fase (antes de qualquer execução)
+
+Este documento, `firebase-audit.md` e `database-design.md` cobrem os
+pontos 1–17 exigidos pela secção 34 do mandato. **Falta aprovação
+explícita do utilizador antes de:**
+
+- criar o projecto Supabase;
+- escrever qualquer ficheiro em `supabase/migrations/`;
+- alterar qualquer linha de código Flutter/React.
