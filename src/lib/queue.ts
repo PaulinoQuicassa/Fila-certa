@@ -46,7 +46,15 @@ const TICKET_COLUMNS =
  * sempre que algo muda -- o filtro do canal só decide QUANDO voltar a ler,
  * a query de `refetch` é sempre a fonte da verdade (sempre filtrada por
  * institution_id + branch_id), por isso é seguro mesmo que dois IDs de
- * branch coincidam entre instituições diferentes. */
+ * branch coincidam entre instituições diferentes.
+ *
+ * `refetch` corre também sempre que o canal fica `SUBSCRIBED` -- não só
+ * na primeira vez, mas também depois de uma reconexão automática (perda
+ * de rede, etc.). O Postgres Changes não reenvia eventos perdidos
+ * enquanto o socket esteve em baixo, por isso sem isto o ecrã ficaria
+ * preso no último estado visto antes de cair a ligação; assim, ao
+ * reconectar, o estado é sempre resincronizado a partir da base de dados
+ * (nunca se assume que os eventos perdidos "chegam depois"). */
 function watchTable(table: string, branchId: string, refetch: () => void) {
   const channel = supabase
     .channel(`${table}:${branchId}:${Math.random().toString(36).slice(2)}`)
@@ -55,7 +63,9 @@ function watchTable(table: string, branchId: string, refetch: () => void) {
       { event: '*', schema: 'public', table, filter: `branch_id=eq.${branchId}` },
       refetch,
     )
-    .subscribe();
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') refetch();
+    });
   return () => {
     void supabase.removeChannel(channel);
   };
@@ -77,7 +87,6 @@ export function subscribeWaitingQueue(
       .order('created_at', { ascending: true });
     onChange((data ?? []).map(ticketFromRow));
   }
-  refetch();
   return watchTable('tickets', branchId, refetch);
 }
 
@@ -97,13 +106,14 @@ export function subscribeTicket(
       .maybeSingle();
     onChange(data ? ticketFromRow(data) : null);
   }
-  refetch();
   const channel = supabase
     .channel(`ticket:${ticketId}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets', filter: `id=eq.${ticketId}` }, refetch)
-    .subscribe();
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') refetch();
+    });
   return () => {
-    supabase.removeChannel(channel);
+    void supabase.removeChannel(channel);
   };
 }
 
@@ -131,7 +141,6 @@ export function subscribeCounter(
       .maybeSingle();
     onChange(data ? counterFromRow(data) : null);
   }
-  refetch();
   return watchTable('counters', branchId, refetch);
 }
 
@@ -159,7 +168,6 @@ export function subscribeCounters(
       .order('label', { ascending: true });
     onChange((data ?? []).map(counterFromRow));
   }
-  refetch();
   return watchTable('counters', branchId, refetch);
 }
 
@@ -188,7 +196,6 @@ export function subscribeLiveBoard(
       updatedAt: toMillis(current.called_at),
     });
   }
-  refetch();
   return watchTable('ticket_calls', branchId, refetch);
 }
 
@@ -210,7 +217,6 @@ export function subscribeTicketsToday(
       .gte('created_at', startOfDay.toISOString());
     onChange((data ?? []).map(ticketFromRow));
   }
-  refetch();
   return watchTable('tickets', branchId, refetch);
 }
 
@@ -254,7 +260,6 @@ export function subscribeAppointmentsToday(
       .gte('created_at', startOfDay.toISOString());
     onChange((data ?? []).map(appointmentFromRow));
   }
-  refetch();
   return watchTable('appointments', branchId, refetch);
 }
 
@@ -310,7 +315,6 @@ export function subscribeRatingsToday(
       .gte('created_at', startOfDay.toISOString());
     onChange((data ?? []).map(ratingFromRow));
   }
-  refetch();
   return watchTable('ratings', branchId, refetch);
 }
 
