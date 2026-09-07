@@ -17,6 +17,8 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    permissions:
+      issues: write
     steps:
       - name: Verifica a app staff (GitHub Pages)
         id: staff
