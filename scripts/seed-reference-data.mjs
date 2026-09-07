@@ -50,11 +50,6 @@ const staffList = [
   { email: 'agente@filacerta.test', name: 'João Manuel', role: 'agent', institutionId: 'banco-exemplo', branchId: 'agencia-maianga', counterId: 'guiche-3' },
 ];
 
-function sqlStr(v) {
-  if (v === null || v === undefined) return 'null';
-  return `'${String(v).replace(/'/g, "''")}'`;
-}
-
 async function upsertViaRest(table, rows, onConflict) {
   const res = await fetch(`${REST_BASE}/${table}?on_conflict=${onConflict}`, {
     method: 'POST',

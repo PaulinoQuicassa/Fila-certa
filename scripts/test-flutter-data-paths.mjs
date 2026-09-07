@@ -57,7 +57,6 @@ async function main() {
   const agentSession = await signIn('agente@siac.test', 'teste123');
 
   console.log('\n1. user_settings: upsert (ensureSettingsRow) + update (toggle)');
-  const upsert = await post(token, 'user_settings', { user_id: customerId });
   // upsert real via Prefer resolution=merge-duplicates, simulando supabase.upsert do Dart:
   const upsertReal = await fetch(`${REST_BASE}/user_settings?on_conflict=user_id`, {
     method: 'POST', headers: { apikey: ANON_KEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Prefer: 'resolution=ignore-duplicates,return=representation' },

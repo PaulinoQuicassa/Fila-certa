@@ -47,15 +47,18 @@ jobs:
       - name: Sem segredos acidentais (service_role, .env, chaves privadas)
         run: |
           set -e
+          # git grep/git ls-files só vêem ficheiros rastreados -- exclui
+          # automaticamente node_modules/dist (sempre gitignored), ao
+          # contrário de um grep -r sobre o disco todo.
           if git ls-files | grep -E '^\.env($|\.local$)'; then
             echo "::error::Ficheiro .env/.env.local não deveria estar versionado."
             exit 1
           fi
-          if grep -rn "sb_secret_\|SUPABASE_SERVICE_ROLE_KEY\s*=\s*['\"]" src/ 2>/dev/null; then
+          if git grep -n "sb_secret_\|SUPABASE_SERVICE_ROLE_KEY\s*=\s*['\"]" -- src/; then
             echo "::error::Possível service_role key ou segredo no código frontend."
             exit 1
           fi
-          if grep -rn "BEGIN PRIVATE KEY\|BEGIN RSA PRIVATE KEY" . --include="*.ts" --include="*.tsx" --include="*.json" 2>/dev/null; then
+          if git grep -nE "BEGIN (RSA )?PRIVATE KEY" -- '*.ts' '*.tsx' '*.json' ':!package-lock.json'; then
             echo "::error::Possível chave privada commitada."
             exit 1
           fi
@@ -66,10 +69,11 @@ jobs:
           set -e
           BANNED='firebase|firestore|google-services|firebase_options|FirebaseAuth|FirebaseFirestore'
           HITS=""
-          if grep -rliE "$BANNED" src/ 2>/dev/null; then HITS="sim"; fi
-          SCRIPT_HITS=$(grep -rliE "$BANNED" scripts/ 2>/dev/null | grep -vE 'backup-firestore\.mjs|count-firestore-data\.mjs' || true)
+          SRC_HITS=$(git grep -liE "$BANNED" -- src/ || true)
+          if [ -n "$SRC_HITS" ]; then echo "$SRC_HITS"; HITS="sim"; fi
+          SCRIPT_HITS=$(git grep -liE "$BANNED" -- scripts/ ':!scripts/backup-firestore.mjs' ':!scripts/count-firestore-data.mjs' || true)
           if [ -n "$SCRIPT_HITS" ]; then echo "$SCRIPT_HITS"; HITS="sim"; fi
-          PKG_HITS=$(grep -iE "$BANNED" package.json | grep -v 'firebase-admin' || true)
+          PKG_HITS=$(git grep -iE "$BANNED" -- package.json | grep -v 'firebase-admin' || true)
           if [ -n "$PKG_HITS" ]; then echo "$PKG_HITS"; HITS="sim"; fi
           if [ -n "$HITS" ]; then
             echo "::error::Referência a Firebase encontrada fora das excepções documentadas (scripts/backup-firestore.mjs, scripts/count-firestore-data.mjs, firebase-admin em package.json -- ver docs/frontend-migration-audit.md)."
@@ -89,6 +93,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: 'npm'
+
+      - run: npm ci
 
       - uses: supabase/setup-cli@v1
         with:

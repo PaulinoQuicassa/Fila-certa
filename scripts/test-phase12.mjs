@@ -86,7 +86,6 @@ async function main() {
   console.log('\n3. Um cliente não vê agendamentos/avaliações doutro cliente (RLS)');
   const otherEmail = `teste-p12-other-${Date.now()}@example.com`;
   const otherId = await createTestCustomer(otherEmail, 'senha123456');
-  const otherSession = await signIn(otherEmail, 'senha123456');
   await fetch(`${REST_BASE}/appointments`, {
     method: 'POST', headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ code: `P12-${Date.now()}`, institution_id: 'siac', branch_id: 'balcao-talatona', customer_id: otherId, service: 'Passaporte e Residência', date: '2026-09-15', time: '09:00' }),
