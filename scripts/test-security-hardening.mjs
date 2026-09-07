@@ -33,7 +33,8 @@ async function deleteAuthUser(uid) {
 function subscribed(channel) {
   return new Promise((resolve, reject) => {
     channel.subscribe((status, err) => {
-      if (status === 'SUBSCRIBED') resolve();
+      // Folga curta pós-SUBSCRIBED -- ver nota em test-realtime-delivery.mjs.
+      if (status === 'SUBSCRIBED') setTimeout(resolve, 300);
       if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') reject(err ?? new Error(status));
     });
   });

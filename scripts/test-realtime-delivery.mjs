@@ -48,7 +48,12 @@ function waitForEvent(channel, table, match, timeoutMs = 8000) {
 function subscribed(channel) {
   return new Promise((resolve, reject) => {
     channel.subscribe((status, err) => {
-      if (status === 'SUBSCRIBED') resolve();
+      // Uma folga curta depois de "SUBSCRIBED": encontrado em CI (Supabase
+      // local recém-arrancado) que a primeira subscrição de uma corrida
+      // pode confirmar-se no cliente antes de o slot de replicação do
+      // servidor estar mesmo pronto a entregar -- sem isto, o 1º cenário
+      // falhava por timeout de forma intermitente (nunca os seguintes).
+      if (status === 'SUBSCRIBED') setTimeout(resolve, 300);
       if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') reject(err ?? new Error(status));
     });
   });
