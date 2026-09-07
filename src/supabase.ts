@@ -1,10 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 
 // Projecto Supabase real (qdfpqispcntitvczybfl) -- ver
-// docs/migration-plan.md, Fase 3. A "anon key" (agora "publishable key",
-// prefixo sb_publishable_) não é secreta -- o controlo de acesso vive nas
-// políticas RLS (docs/security.md), não na chave, exactamente como a
-// config web do Firebase que substitui.
+// docs/migration-plan.md, Fase 3. A "publishable key" (prefixo
+// sb_publishable_) não é secreta -- o controlo de acesso vive
+// inteiramente nas políticas RLS (docs/security-rls.md), nunca na chave.
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
