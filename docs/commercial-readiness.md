@@ -107,21 +107,26 @@ completa: **8/8 scripts verdes**.
 
 ## Pendente (por prioridade)
 
-1. **CI/CD** (próxima prioridade escolhida): lint/build/testes
-   automáticos antes de deploy, incluindo os testes de RLS/segurança já
-   existentes.
-2. **Retenção de `ticket_calls`/`audit_logs`/notificações** — sem
+1. **Retenção de `ticket_calls`/`audit_logs`/notificações** — sem
    política ainda.
-3. **Testes automatizados Flutter** — reescrever `test/widget_test.dart`
-   sem `fake_cloud_firestore` (ver `docs/testing.md`).
-4. **Papel de administração da plataforma** (Platform Admin) —
+2. **Testes automatizados Flutter** — reescrever `test/widget_test.dart`
+   sem `fake_cloud_firestore` (ver `docs/testing.md`); continuam `skip`
+   e agora também documentados como tal no CI (Ronda 4).
+3. **Papel de administração da plataforma** (Platform Admin) —
    onboarding de instituições continua manual, sem visão global.
-5. **Notificações push** (FCM/APNs ou equivalente) — depois da base
+4. **Notificações push** (FCM/APNs ou equivalente) — depois da base
    operacional consolidada.
-6. **Backups automáticos reais** — só resolvido com upgrade de plano
+5. **Backups automáticos reais** — só resolvido com upgrade de plano
    (decisão de custo do utilizador) ou uma solução externa (ex.: um
    `pg_dump` agendado fora do Supabase, com credenciais de base de
    dados directas — não tentado ainda).
+6. **Migrações de produção continuam manuais** (decisão deliberada da
+   Ronda 4, não uma lacuna a fechar sem mais contexto) — sem ambiente
+   de staging, automatizar isto teria mais risco do que benefício por
+   agora.
+7. **Sem protecção de branch** (`master`/`main` aceitam push directo
+   sem PR obrigatório) — decisão em aberto, não tomada nesta ronda por
+   estar fora do âmbito pedido.
 
 ## Ronda 3 (2026-09-07) — Observabilidade: Sentry + uptime via GitHub Actions
 
@@ -185,3 +190,86 @@ o trabalho real desta migração sempre aconteceu), por isso o
 do branch por omissão). Corrigido via API
 (`default_branch: master`) — `main` não foi apagado nem alterado,
 fica só como branch secundário, obsoleto mas inofensivo.
+
+## Ronda 4 (2026-09-07) — CI/CD: controlo de qualidade e deploy seguro
+
+Pipeline de qualidade + deploy automático nos dois repos, substituindo
+o processo manual usado até aqui (lint/build/deploy corridos à mão
+nesta máquina). Ver `docs/rollback.md` para o procedimento de reversão.
+
+**`fila-certa-staff/.github/workflows/ci.yml`** (push/PR para `master`)
+— 3 jobs:
+1. **Qualidade e segurança (Web)**: TypeScript (`tsc -b`), lint, build,
+   verificação de segredos acidentais (`.env`, `service_role`, chaves
+   privadas — via `git grep`, só ficheiros rastreados), verificação
+   permanente de não-regressão de Firebase (falha o build se
+   `firebase`/`firestore`/`google-services`/`firebase_options`/
+   `FirebaseAuth`/`FirebaseFirestore` aparecer fora das excepções
+   documentadas: `scripts/backup-firestore.mjs`,
+   `scripts/count-firestore-data.mjs`, `firebase-admin` em
+   `package.json`), `npm audit` (só bloqueia em alto/crítico).
+2. **Testes Supabase — ambiente local efémero**: `supabase start`
+   (Docker, só disponível nos runners do GitHub) sobe um Postgres limpo
+   e aplica automaticamente todas as migrations versionadas — prova que
+   são reproduzíveis do zero, não só que funcionam em produção. Semeia
+   dados de referência (`scripts/seed-reference-data.mjs`, novo,
+   idempotente) e corre os 8 scripts de regressão (RPC, RLS, Realtime,
+   concorrência, auditoria) contra este ambiente, nunca contra
+   produção. Uma falha aqui bloqueia o deploy — sem excepções "7/8 já
+   chega".
+3. **Deploy (GitHub Pages) + Smoke Test**: só corre em push directo a
+   `master` (não em PR) e só depois dos dois jobs anteriores passarem.
+   Build com `--base=/Fila-certa/`, publica via `git worktree` no
+   branch `gh-pages`, smoke test real pós-deploy (HTTP 200, HTML da
+   app presente, sem Firebase).
+
+**`projectogestaodefilas/.github/workflows/ci.yml`** (push/PR para
+`main`) — equivalente para a app cliente Flutter: `flutter analyze`
+bloqueante, `flutter test` (os 4 testes de widget existentes
+mantêm-se `skip`, documentados desde a migração — ver comentário no
+topo de `test/widget_test.dart` — não reescritos para fingir cobertura
+que não existe), as mesmas verificações de segredos/Firebase, build
+web e deploy com smoke test para `https://paulinoquicassa.github.io/DevSYNOVAR/`.
+Corrigido um único aviso pré-existente de `flutter analyze`
+(`prefer_const_constructors` em `lib/screens/queue_screen.dart:200`)
+para o gate poder ser bloqueante sem ficar preso num aviso cosmético
+sem relação com esta ronda.
+
+**Decisões deliberadas, fora do âmbito desta ronda:**
+- **Migrações de base de dados continuam manuais** (mesmo processo já
+  usado durante toda a migração, via Management API). Não foi
+  automatizada a aplicação de novas migrations a produção como parte
+  do deploy — não existe ambiente de staging, e alterações de esquema
+  não são triviais de reverter; o próprio pedido original desta fase
+  pede revisão antes de produção. Migrations continuam versionadas em
+  `supabase/migrations/` e testadas no Postgres efémero do CI antes de
+  qualquer aplicação manual a produção.
+- **Sem regras de protecção de branch** (`master`/`main` continuam sem
+  exigir PR/review para push directo) — mantém a prática já em uso
+  durante toda esta migração; criar essa exigência agora seria uma
+  mudança de processo não pedida explicitamente. Fica como ponto em
+  aberto, não como decisão silenciosa.
+- **Zero GitHub Secrets configurados** em ambos os repositórios
+  (confirmado via `gh secret list`) — e não são necessários com este
+  desenho: o Supabase local efémero gera as suas próprias credenciais
+  em tempo de execução (capturadas de `supabase status`), e o push
+  para `gh-pages` usa o `GITHUB_TOKEN` automático do workflow.
+- **`permissions:` explícitas** adicionadas a ambos os workflows
+  (`contents: write` para o push ao `gh-pages`) — o valor por omissão
+  do repositório é só leitura (`default_workflow_permissions: read`),
+  confirmado via API; sem isto o passo de deploy falharia
+  silenciosamente por falta de autorização.
+
+**Validado**: ambos os pipelines correram de ponta a ponta com sucesso
+real (não simulado) — `fila-certa-staff` run `34149079490` (3/3 jobs),
+`DevSYNOVAR` run `34149782974` (3/3 jobs) — incluindo o deploy e o
+smoke test pós-deploy contra os sites publicados reais.
+
+### Incidente durante esta ronda: sem novos incidentes de dados
+
+Ao contrário da Ronda 3, esta ronda não teve nenhum incidente de perda
+ou corrupção de dados. As iterações de correcção do workflow (grep vs.
+`git grep`, `npm ci` em falta, exclusões do Firebase-check,
+`permissions:` em falta) foram todas descobertas e corrigidas através
+de execuções reais do pipeline no GitHub Actions, nunca por
+adivinhação.
