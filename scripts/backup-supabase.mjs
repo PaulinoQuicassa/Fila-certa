@@ -32,17 +32,30 @@ const TABLES = [
   'user_settings', 'audit_logs',
 ];
 
+// A maioria das tabelas tem PK "id"; branch_counters/user_settings têm
+// PKs compostas/próprias sem coluna "id" -- ordenar por uma coluna que
+// realmente existe em cada uma (só para paginação estável, não é a PK).
+const ORDER_COLUMN = {
+  branch_counters: 'institution_id',
+  user_settings: 'user_id',
+};
+
 async function dumpTable(table) {
   const rows = [];
   let offset = 0;
   const pageSize = 1000;
+  const orderBy = ORDER_COLUMN[table] ?? 'id';
   for (;;) {
-    const res = await fetch(`${REST_BASE}/${table}?select=*&order=id&limit=${pageSize}&offset=${offset}`, {
+    const res = await fetch(`${REST_BASE}/${table}?select=*&order=${orderBy}&limit=${pageSize}&offset=${offset}`, {
       headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` },
     });
     if (!res.ok) {
-      // Tabela pode não existir ainda (ex.: audit_logs antes da migration correspondente) -- não é um erro fatal do backup.
-      if (res.status === 404 || res.status === 400) return { skipped: true, reason: await res.text() };
+      // Só 404 é "tabela ainda não existe" (ex.: uma tabela nova antes
+      // da sua migration ser aplicada) -- qualquer outro erro (400,
+      // 403, etc.) é real e tem de parar o backup, não ser ignorado
+      // silenciosamente (já aconteceu: um erro 400 por nome de coluna
+      // errado escondeu duas tabelas inteiras do backup).
+      if (res.status === 404) return { skipped: true, reason: await res.text() };
       throw new Error(`${table}: ${res.status} ${await res.text()}`);
     }
     const page = await res.json();
