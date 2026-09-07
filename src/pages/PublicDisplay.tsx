@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { supabase } from '../supabase';
+import { ensureAnonymousSession } from '../supabase';
 import { subscribeBranchWaitStats, subscribeLiveBoard } from '../lib/queue';
 import type { LiveBoard } from '../types';
 
@@ -41,10 +41,7 @@ export function PublicDisplay() {
   const lastCalledAt = useRef<number | null>(null);
 
   useEffect(() => {
-    supabase.auth
-      .getSession()
-      .then(({ data }) => (data.session ? null : supabase.auth.signInAnonymously()))
-      .finally(() => setReady(true));
+    ensureAnonymousSession().finally(() => setReady(true));
   }, []);
 
   useEffect(() => {

@@ -13,3 +13,14 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+/** Garante uma sessão (anónima se não houver nenhuma) -- usado só pelo
+ * painel de TV (`PublicDisplay.tsx`), que não faz login. Centralizado
+ * aqui para a página não chamar `supabase.auth` directamente (mantém a
+ * separação UI → data source pedida na Fase 10). */
+export async function ensureAnonymousSession() {
+  const { data } = await supabase.auth.getSession();
+  if (!data.session) {
+    await supabase.auth.signInAnonymously();
+  }
+}
