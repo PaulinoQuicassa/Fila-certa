@@ -160,14 +160,19 @@ async function main() {
     fail('estado final da senha 2 inesperado', JSON.stringify(t2Final));
   }
 
-  console.log('\n9. Cliente NÃO consegue ler senhas via update directo à tabela (RLS bloqueia)');
+  console.log('\n9. Cliente NÃO consegue ler senhas via update directo à tabela (GRANT + RLS bloqueiam)');
   const directUpdate = await fetch(`${REST_BASE}/tickets?id=eq.${ticketId}`, {
     method: 'PATCH',
     headers: { apikey: ANON_KEY, Authorization: `Bearer ${customerSession.access_token}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
     body: JSON.stringify({ status: 'waiting' }),
   });
   const directBody = await directUpdate.json();
-  if (Array.isArray(directBody) && directBody.length === 0) {
+  // Desde o hardening de GRANTs (2026-09-07), UPDATE em tickets nem
+  // chega a ser avaliado pelo RLS -- falha logo com 42501 (permission
+  // denied), mais forte do que a recusa silenciosa de antes (0 linhas).
+  if (directUpdate.status === 403 && directBody.code === '42501') {
+    ok('UPDATE directo à tabela tickets negado pelo GRANT (permission denied, nem chega ao RLS)');
+  } else if (Array.isArray(directBody) && directBody.length === 0) {
     ok('UPDATE directo à tabela tickets negado pelo RLS (0 linhas afectadas, sem policy de update)');
   } else {
     fail('UPDATE directo deveria ter sido bloqueado', JSON.stringify(directBody));

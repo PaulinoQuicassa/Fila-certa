@@ -156,3 +156,43 @@ funcionalidade sem pedido nem uso actual.
 **Recomendação**: (a). **Impacto de não decidir agora**: nenhum — o
 comportamento actual (1 gestor, 1 filial) é exactamente o que o código
 já usa em produção.
+
+## 7. Auditoria de produto comercial (2026-09-07) — GRANTs e audit_logs
+
+Pedido explícito do utilizador ao encerrar a migração Firebase→Supabase:
+auditar o projecto como produto comercial real, não só "funciona".
+Dois achados de segurança corrigidos nesta ronda:
+
+**GRANTs desnecessários**: `anon`/`authenticated` tinham GRANT total
+(INSERT/UPDATE/DELETE/TRUNCATE) em todas as tabelas — comportamento por
+omissão do Supabase, seguro hoje só porque o RLS bloqueia tudo sem
+policy. Corrigido em `20260907100200_revoke_unnecessary_grants.sql`:
+revogados os privilégios que nenhum papel da aplicação usa
+legitimamente (INSERT/UPDATE/DELETE directo em `tickets`/`counters`/
+`ticket_calls`/`branch_counters`/`institutions`/`branches`/`staff`/
+`appointments`/`audit_logs`, TRUNCATE em tudo, UPDATE/DELETE em
+`ratings`, DELETE em `notifications`/`user_settings`). Efeito: mesmo
+que o RLS de uma tabela seja desactivado por engano no futuro, essas
+operações continuam bloqueadas ao nível do GRANT — duas camadas em vez
+de uma. Validado por teste real (`scripts/test-audit-logs.mjs`,
+cenário 5): `UPDATE` directo a `counters` continua a devolver 0 linhas.
+
+**`audit_logs`** (tabela nova, `20260907100000_audit_logs.sql` +
+`20260907100100_audit_rpcs.sql`): regista `actor_id`, `action`,
+`entity`/`entity_id`, `institution_id`/`branch_id`, `result`, `details`
+(jsonb) para as 11 RPCs de mutação existentes (`pull_ticket`,
+`call_next`, `recall_current`, `complete_current`, `mark_no_show`,
+`transfer_ticket`, `set_counter_paused`, `cancel_ticket`,
+`set_on_the_way`, `schedule_appointment`, `cancel_appointment`). Só a
+equipa da própria filial lê o seu registo (`is_staff_of_branch`, mesma
+regra de `tickets`/`counters`); ninguém escreve directamente — só a
+função interna `write_audit_log(...)`, chamada de dentro de cada RPC
+depois da mutação ter tido sucesso.
+
+**Limitação conhecida, aceite**: só sucessos ficam auditados. Uma
+tentativa negada (`raise exception`) reverte a transacção inteira,
+incluindo o próprio registo de auditoria — capturar tentativas negadas
+exigiria uma transacção autónoma (extensão `dblink`/`pg_background`),
+considerado overengineering para o valor que traria agora. Tentativas
+negadas continuam visíveis nos logs do próprio Supabase (Postgres
+logs), só não ficam num histórico consultável pela equipa da instituição.
