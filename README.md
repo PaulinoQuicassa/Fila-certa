@@ -97,6 +97,24 @@ Ver `docs/migration-plan.md` para o histórico fase a fase completo,
 `docs/frontend-migration-audit.md` para a confirmação de que não resta
 nenhuma dependência funcional de Firebase.
 
+## Publicar (GitHub Pages)
+
+O alojamento não é Firebase Hosting (removido em 2026-09-07, por
+decisão explícita de não manter Firebase para nenhuma finalidade,
+incluindo hosting) -- é GitHub Pages, servido a partir de uma branch
+órfã `gh-pages` deste repositório (repositório público, exigido pelo
+plano gratuito do GitHub Pages).
+
+```bash
+npm run build                       # gera dist/, mas SEM o base path certo
+MSYS_NO_PATHCONV=1 npx vite build --base=/Fila-certa/   # build com o base path do GitHub Pages
+cp dist/index.html dist/404.html    # fallback de SPA (GitHub Pages não tem rewrites)
+touch dist/.nojekyll
+# depois: copiar dist/ para uma worktree da branch gh-pages, commit, push -f
+```
+
+URL publicado: https://paulinoquicassa.github.io/Fila-certa/
+
 ## Estado actual
 
 Funcional em produção contra o Supabase real: login por papel (agente/
