@@ -75,22 +75,51 @@ antiga de recusa (RLS devolvia 0 linhas); actualizada para aceitar
 também a recusa mais forte agora possível (`42501 permission denied`,
 nem chega a avaliar RLS).
 
-## Pendente (por prioridade, a decidir)
+## Ronda 2 (2026-09-07) — fecho dos gaps de RLS conhecidos
 
-1. **Backups automáticos reais** — só resolvido com upgrade de plano
+Prioridade escolhida pelo utilizador: fechar os 3 gaps já identificados
+antes de qualquer funcionalidade nova (observabilidade, CI/CD, etc.).
+
+`20260907110000_close_known_rls_gaps.sql`:
+- **`ratings_select`**: de `using (true)` para `customer_id = auth.uid()
+  or is_staff_of_branch(institution_id, branch_id)` — mesma regra de
+  `tickets`.
+- **`appointments_select`**: de `is_staff_of(institution_id)` (só
+  instituição) para `is_staff_of_branch(institution_id, branch_id)`.
+- **`branch_counters_select`**: idem.
+
+**Achado extra desta auditoria** (`20260907110100_revoke_view_grants.sql`):
+a view `counters_with_agent` tinha ficado fora da revogação de GRANTs da
+ronda anterior — ainda tinha INSERT/UPDATE/DELETE concedidos a
+`anon`/`authenticated`. Inofensivo na prática (a view tem um `LEFT JOIN`,
+o Postgres nunca a trata como automaticamente actualizável), mas
+corrigido para consistência da mesma defesa em profundidade.
+
+**Nova auditoria de RLS/permissões pedida explicitamente, feita**:
+confirmado directamente na base de dados — RLS activo nas 12 tabelas,
+todas as 16 policies a corresponder exactamente ao desenho, GRANTs sem
+mais nenhum resíduo desnecessário.
+
+**Validado** com `scripts/test-rls-gaps-closed.mjs` (novo, 6 cenários,
+incluindo uma filial temporária para provar isolamento cross-branch
+dentro da mesma instituição, não só cross-institution) + regressão
+completa: **8/8 scripts verdes**.
+
+## Pendente (por prioridade)
+
+1. **Observabilidade** (próxima prioridade escolhida): rastreio de
+   erros, monitorização de uptime, alertas, saúde das RPCs.
+2. **CI/CD**: lint/build/testes automáticos antes de deploy, incluindo
+   os testes de RLS/segurança já existentes.
+3. **Retenção de `ticket_calls`/`audit_logs`/notificações** — sem
+   política ainda.
+4. **Testes automatizados Flutter** — reescrever `test/widget_test.dart`
+   sem `fake_cloud_firestore` (ver `docs/testing.md`).
+5. **Papel de administração da plataforma** (Platform Admin) —
+   onboarding de instituições continua manual, sem visão global.
+6. **Notificações push** (FCM/APNs ou equivalente) — depois da base
+   operacional consolidada.
+7. **Backups automáticos reais** — só resolvido com upgrade de plano
    (decisão de custo do utilizador) ou uma solução externa (ex.: um
    `pg_dump` agendado fora do Supabase, com credenciais de base de
    dados directas — não tentado ainda).
-2. **Gaps de segurança conhecidos, ainda não corrigidos**:
-   `ratings_select` aberto a qualquer autenticado; `appointments`/
-   `branch_counters` isolados por instituição, não por filial.
-3. **Observabilidade**: rastreio de erros (Sentry ou equivalente),
-   alerta de uptime.
-4. **CI/CD**: lint/build/testes automáticos antes de deploy.
-5. **Notificações push** (FCM/APNs ou equivalente) — decisão de
-   arquitectura, não implementado.
-6. **Testes automatizados Flutter** — reescrever `test/widget_test.dart`
-   sem `fake_cloud_firestore` (ver `docs/testing.md`).
-7. **Retenção de `ticket_calls`** — sem política ainda.
-8. **Papel de administração da plataforma** — onboarding de
-   instituições continua manual.

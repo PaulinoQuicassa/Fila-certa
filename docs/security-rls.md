@@ -112,24 +112,20 @@ Validado com `scripts/test-security-hardening.mjs`: um agente/gestor da
 Filial A não lê nem consegue chamar/operar em senhas da Filial B da
 mesma instituição.
 
-## 5. Fora de âmbito desta ronda (decisão explícita, não esquecimento)
+## 5. Gaps fechados numa ronda posterior (2026-09-07) e o que continua fora de âmbito
 
-O pedido foi especificamente sobre `tickets`/`counters`/`ticket_calls`.
-Encontrei a mesma classe de exposição noutras duas tabelas, mas **não
-as alterei** — ficam aqui registadas para uma decisão futura, para não
-alterar "outras partes da arquitectura" sem pedido:
+**Actualização**: os três itens abaixo marcados como "fora de âmbito"
+foram fechados a pedido explícito do utilizador — ver
+`docs/commercial-readiness.md`, "Ronda 2", e
+`20260907110000_close_known_rls_gaps.sql`. `ratings_select` e
+`appointments_select` passaram a `customer_id = auth.uid() or
+is_staff_of_branch(institution_id, branch_id)`;
+`branch_counters_select` passou a `is_staff_of_branch(...)`. Validado
+com `scripts/test-rls-gaps-closed.mjs` (isolamento cross-branch dentro
+da mesma instituição, não só cross-institution).
 
-- **`ratings_select`** (`using (true)`) — qualquer autenticado lê
-  comentários/notas de avaliação de qualquer instituição, incluindo o
-  `customer_id` (UUID, não identifica directamente a pessoa, mas é
-  linkável). Mesma classe de problema que `tickets`; a correcção seria
-  idêntica (`customer_id = auth.uid() or is_staff_of_branch(...)`).
-- **`appointments_select`/`branch_counters_select`** continuam a usar
-  `is_staff_of(institution_id)` (por instituição, não por filial) — não
-  tocados porque não estavam na lista pedida, e porque não há evidência
-  no código actual de que algum ecrã dependa de um gestor ver
-  agendamentos de outra filial, mas também não há evidência do
-  contrário; fica como pergunta em aberto, não como bug assumido.
+Continua fora de âmbito, sem pedido para o alterar:
+
 - **`institutions`/`branches`** continuam com SELECT aberto — sem PII,
   sem uso ao vivo por nenhum ecrã (a app Flutter usa dados estáticos em
   `MockData`), risco residual mínimo.
