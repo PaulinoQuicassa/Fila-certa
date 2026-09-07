@@ -107,19 +107,81 @@ completa: **8/8 scripts verdes**.
 
 ## Pendente (por prioridade)
 
-1. **Observabilidade** (próxima prioridade escolhida): rastreio de
-   erros, monitorização de uptime, alertas, saúde das RPCs.
-2. **CI/CD**: lint/build/testes automáticos antes de deploy, incluindo
-   os testes de RLS/segurança já existentes.
-3. **Retenção de `ticket_calls`/`audit_logs`/notificações** — sem
+1. **CI/CD** (próxima prioridade escolhida): lint/build/testes
+   automáticos antes de deploy, incluindo os testes de RLS/segurança já
+   existentes.
+2. **Retenção de `ticket_calls`/`audit_logs`/notificações** — sem
    política ainda.
-4. **Testes automatizados Flutter** — reescrever `test/widget_test.dart`
+3. **Testes automatizados Flutter** — reescrever `test/widget_test.dart`
    sem `fake_cloud_firestore` (ver `docs/testing.md`).
-5. **Papel de administração da plataforma** (Platform Admin) —
+4. **Papel de administração da plataforma** (Platform Admin) —
    onboarding de instituições continua manual, sem visão global.
-6. **Notificações push** (FCM/APNs ou equivalente) — depois da base
+5. **Notificações push** (FCM/APNs ou equivalente) — depois da base
    operacional consolidada.
-7. **Backups automáticos reais** — só resolvido com upgrade de plano
+6. **Backups automáticos reais** — só resolvido com upgrade de plano
    (decisão de custo do utilizador) ou uma solução externa (ex.: um
    `pg_dump` agendado fora do Supabase, com credenciais de base de
    dados directas — não tentado ainda).
+
+## Ronda 3 (2026-09-07) — Observabilidade: Sentry + uptime via GitHub Actions
+
+Serviço externo gratuito escolhido pelo utilizador. Sentry para
+rastreio de erros (5 mil eventos/mês grátis), GitHub Actions para
+monitorização de uptime (já autenticado nesta sessão, sem conta nova).
+
+**Sentry** — 2 projectos separados (`fila-certa-client`/Flutter,
+`fila-certa-staff`/React), sem tracing/session replay (só erros, para
+não gastar quota sem necessidade comprovada):
+- React: `src/sentry.ts` (init + `reportError(error, context)`),
+  `Sentry.ErrorBoundary` à volta de toda a app (`App.tsx`, com fallback
+  amigável em vez de ecrã branco), e o wrapper `run()` do `AgentScreen`
+  (único ponto de entrada de todas as acções do balcão) reporta com
+  contexto (instituição/filial/balcão).
+- Flutter: `SentryFlutter.init(...)` envolve o `appRunner` em
+  `main.dart` — captura automática de erros não tratados e de futures
+  sem `await`, sem código extra. `choose_service_screen.dart` (entrar
+  na fila, fluxo crítico) reporta explicitamente com contexto.
+- Deliberadamente sem alterações: `Login.tsx`/`auth_service.dart`
+  (password errada não é bug), `location_service.dart` (permissão de
+  GPS negada é esperado), `Dashboard.tsx` (sem nenhum acto próprio com
+  try/catch).
+- Validado com um evento de teste real enviado directamente à API de
+  ingestão de cada projecto (200, ID de evento devolvido) — confirma os
+  2 DSNs correctos antes de confiar na app para os disparar.
+
+**Uptime** (`.github/workflows/uptime.yml`, repo `fila-certa-staff`):
+corre a cada 15 minutos, verifica as duas apps (GitHub Pages) e uma RPC
+pública real do Supabase (`branch_wait_stats` — exercita
+Auth+PostgREST+RPC+DB, não só o domínio). Em falha: o workflow falha
+(GitHub notifica por email o dono do repositório) e abre/actualiza uma
+issue única (label `uptime`); fecha-se sozinha quando as 3 verificações
+voltam a passar. Testado com uma corrida manual (`workflow_dispatch`) —
+sucesso confirmado.
+
+### Incidente durante esta ronda: corrupção de `.git/config`
+
+Uma interrupção abrupta da sessão anterior, a meio de uma operação
+`git worktree` no repositório `fila-certa-staff`, deixou o
+`.git/config` local completamente zerado (ficheiro do tamanho certo,
+conteúdo todo `0x00` — sintoma clássico de escrita interrompida antes
+do conteúdo real ser gravado). Diagnosticado e reparado sem perda de
+dados: `git fsck` confirmou que todos os objectos/refs reais estavam
+intactos (incluindo um commit "pendente" — órfão de uma ref também
+corrompida — que era exactamente o build do GitHub Pages que estava a
+ser publicado no momento do corte); o `config` foi reconstruído à mão
+(remote + tracking de branch, usando o repositório irmão intacto como
+referência de formato) e as refs corrompidas do `gh-pages` foram
+reparadas apontando-as para o commit recuperado. Nada foi perdido; o
+deploy que estava em curso no momento do corte já tinha realmente
+chegado ao GitHub antes da corrupção local, só a contabilidade local é
+que ficou incoerente.
+
+### Achado à parte, corrigido: branch por omissão errado no GitHub
+
+O repositório `Fila-certa` tinha o branch **`main`** como default no
+GitHub (um stub antigo, 18 commits atrás de `master`, que é onde todo
+o trabalho real desta migração sempre aconteceu), por isso o
+`uptime.yml` não era reconhecido pelo GitHub Actions (só lê workflows
+do branch por omissão). Corrigido via API
+(`default_branch: master`) — `main` não foi apagado nem alterado,
+fica só como branch secundário, obsoleto mas inofensivo.
