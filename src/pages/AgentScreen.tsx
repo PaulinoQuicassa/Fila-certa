@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
+import { reportError } from '../sentry';
 import {
   callNext,
   completeCurrent,
@@ -79,6 +80,7 @@ export function AgentScreen() {
       await action();
     } catch (err) {
       console.error(err);
+      reportError(err, { institutionId, branchId, counterId, screen: 'AgentScreen' });
       setError(err instanceof Error ? err.message : 'Ocorreu um erro inesperado.');
     } finally {
       setBusy(false);

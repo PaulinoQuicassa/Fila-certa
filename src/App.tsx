@@ -1,4 +1,5 @@
 import { Navigate, Route, BrowserRouter, Routes } from 'react-router-dom';
+import * as Sentry from '@sentry/react';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { Login } from './pages/Login';
 import { AgentScreen } from './pages/AgentScreen';
@@ -25,35 +26,49 @@ function LoginRoute() {
   return <Login />;
 }
 
+function CrashFallback() {
+  return (
+    <div style={{ padding: 40, textAlign: 'center', fontFamily: 'sans-serif' }}>
+      <h2>Ocorreu um erro inesperado.</h2>
+      <p>A equipa técnica já foi notificada. Recarregue a página para continuar.</p>
+      <button onClick={() => window.location.reload()} style={{ marginTop: 16, padding: '10px 20px' }}>
+        Recarregar
+      </button>
+    </div>
+  );
+}
+
 export default function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter basename={import.meta.env.BASE_URL}>
-        <Routes>
-          {/* Ecrã público de chamada — sem login de equipa, autenticação
-              anónima própria; é o que fica ligado permanentemente na TV. */}
-          <Route path="/painel" element={<PublicDisplay />} />
+    <Sentry.ErrorBoundary fallback={<CrashFallback />}>
+      <AuthProvider>
+        <BrowserRouter basename={import.meta.env.BASE_URL}>
+          <Routes>
+            {/* Ecrã público de chamada — sem login de equipa, autenticação
+                anónima própria; é o que fica ligado permanentemente na TV. */}
+            <Route path="/painel" element={<PublicDisplay />} />
 
-          <Route path="/login" element={<LoginRoute />} />
-          <Route
-            path="/agente"
-            element={
-              <RequireRole role="agent">
-                <AgentScreen />
-              </RequireRole>
-            }
-          />
-          <Route
-            path="/dashboard"
-            element={
-              <RequireRole role="manager">
-                <Dashboard />
-              </RequireRole>
-            }
-          />
-          <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes>
-      </BrowserRouter>
-    </AuthProvider>
+            <Route path="/login" element={<LoginRoute />} />
+            <Route
+              path="/agente"
+              element={
+                <RequireRole role="agent">
+                  <AgentScreen />
+                </RequireRole>
+              }
+            />
+            <Route
+              path="/dashboard"
+              element={
+                <RequireRole role="manager">
+                  <Dashboard />
+                </RequireRole>
+              }
+            />
+            <Route path="*" element={<Navigate to="/login" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
+    </Sentry.ErrorBoundary>
   );
 }
