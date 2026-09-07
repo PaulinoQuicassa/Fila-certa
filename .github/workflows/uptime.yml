@@ -1,0 +1,83 @@
+name: Uptime — Fila Certa
+
+# Observabilidade (produto comercial, 2026-09-07): não havia nenhuma
+# forma de saber, sem um cliente reportar, que uma das apps ou o
+# Supabase estavam em baixo. Corre a cada 15 minutos, verifica as duas
+# apps (GitHub Pages) e uma chamada real ao Supabase (RPC pública
+# `branch_wait_stats`, exercita Auth+PostgREST+RPC+DB, não só o DNS).
+# Em falha: o workflow falha (GitHub notifica por email o dono do
+# repositório, comportamento nativo para workflows agendados) e abre/
+# actualiza uma issue única para ficar um registo visível.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verifica a app staff (GitHub Pages)
+        id: staff
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 https://paulinoquicassa.github.io/Fila-certa/)
+          echo "http_code=$code" >> "$GITHUB_OUTPUT"
+          test "$code" = "200"
+
+      - name: Verifica a app cliente (GitHub Pages)
+        id: client
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 https://paulinoquicassa.github.io/DevSYNOVAR/)
+          echo "http_code=$code" >> "$GITHUB_OUTPUT"
+          test "$code" = "200"
+
+      - name: Verifica o Supabase (RPC pública real, não só o domínio)
+        id: supabase
+        run: |
+          resp=$(curl -s -o /tmp/supabase_check.json -w "%{http_code}" --max-time 15 \
+            -X POST "https://qdfpqispcntitvczybfl.supabase.co/rest/v1/rpc/branch_wait_stats" \
+            -H "apikey: sb_publishable_HLelr-FOPvSL9a5w8_feUw_FfKIrOoQ" \
+            -H "Authorization: Bearer sb_publishable_HLelr-FOPvSL9a5w8_feUw_FfKIrOoQ" \
+            -H "Content-Type: application/json" \
+            -d '{"p_institution_id":"banco-exemplo","p_branch_id":"agencia-maianga"}')
+          echo "http_code=$resp" >> "$GITHUB_OUTPUT"
+          cat /tmp/supabase_check.json
+          test "$resp" = "200"
+
+      - name: Abre/actualiza issue de incidente (só corre se algo falhou acima)
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = 'Uptime: falha detectada';
+            const body = [
+              `Verificação automática falhou em ${new Date().toISOString()}.`,
+              '',
+              `- staff (GitHub Pages): ${'${{ steps.staff.outputs.http_code }}'}`,
+              `- cliente (GitHub Pages): ${'${{ steps.client.outputs.http_code }}'}`,
+              `- Supabase (RPC branch_wait_stats): ${'${{ steps.supabase.outputs.http_code }}'}`,
+              '',
+              `Corrida: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            ].join('\n');
+            const { data: existing } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo, state: 'open', labels: 'uptime',
+            });
+            if (existing.length > 0) {
+              await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: existing[0].number, body });
+            } else {
+              await github.rest.issues.create({ owner: context.repo.owner, repo: context.repo.repo, title, body, labels: ['uptime'] });
+            }
+
+      - name: Fecha a issue de incidente (só corre se tudo passou e havia uma issue aberta)
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: existing } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo, state: 'open', labels: 'uptime',
+            });
+            for (const issue of existing) {
+              await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: issue.number, body: `Recuperado em ${new Date().toISOString()} -- as 3 verificações voltaram a passar.` });
+              await github.rest.issues.update({ owner: context.repo.owner, repo: context.repo.repo, issue_number: issue.number, state: 'closed' });
+            }
