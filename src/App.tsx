@@ -28,7 +28,7 @@ function LoginRoute() {
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
+      <BrowserRouter basename={import.meta.env.BASE_URL}>
         <Routes>
           {/* Ecrã público de chamada — sem login de equipa, autenticação
               anónima própria; é o que fica ligado permanentemente na TV. */}
