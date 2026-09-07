@@ -4,8 +4,8 @@
 // possíveis para quem não é dono/staff dessa filial.
 import { createClient } from '@supabase/supabase-js';
 
-const URL = 'https://qdfpqispcntitvczybfl.supabase.co';
-const ANON_KEY = 'sb_publishable_HLelr-FOPvSL9a5w8_feUw_FfKIrOoQ';
+const URL = process.env.SUPABASE_URL ?? 'https://qdfpqispcntitvczybfl.supabase.co';
+const ANON_KEY = process.env.SUPABASE_ANON_KEY ?? 'sb_publishable_HLelr-FOPvSL9a5w8_feUw_FfKIrOoQ';
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 let failures = 0;

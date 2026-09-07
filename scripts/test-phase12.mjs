@@ -1,11 +1,11 @@
 // Fase 12 (docs/migration-plan.md): dois cenários da secção de testes
 // ainda não cobertos pelas Fases 9/10 -- concorrência (secção 21 do
 // mandato) e isolamento entre instituições (RBAC/RLS por papel).
-const PROJECT_REF = 'qdfpqispcntitvczybfl';
-const ANON_KEY = 'sb_publishable_HLelr-FOPvSL9a5w8_feUw_FfKIrOoQ';
+const BASE_URL = process.env.SUPABASE_URL ?? 'https://qdfpqispcntitvczybfl.supabase.co';
+const ANON_KEY = process.env.SUPABASE_ANON_KEY ?? 'sb_publishable_HLelr-FOPvSL9a5w8_feUw_FfKIrOoQ';
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const AUTH_BASE = `https://${PROJECT_REF}.supabase.co/auth/v1`;
-const REST_BASE = `https://${PROJECT_REF}.supabase.co/rest/v1`;
+const AUTH_BASE = `${BASE_URL}/auth/v1`;
+const REST_BASE = `${BASE_URL}/rest/v1`;
 
 let failures = 0;
 const ok = (l) => console.log(`  OK  ${l}`);
