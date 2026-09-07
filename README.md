@@ -4,91 +4,103 @@ App web (React + TypeScript + Vite) para a equipa das instituições que
 usam a Fila Certa: agente de balcão, ecrã público de chamada (TV) e
 dashboard do gestor. É um **repositório separado** da app cliente Flutter
 (`projectogestaodefilas`, GitHub `PaulinoQuicassa/DevSYNOVAR`) — código
-diferente, **mesmo projecto Firebase** (`filacerta-d74f0`).
+diferente, **mesmo projecto Supabase** (`qdfpqispcntitvczybfl`).
 
 ## Porque um repositório separado
 
 - Público diferente (equipa institucional vs. cliente final), ciclo de
   distribuição diferente (web para tablets/TVs, sem lojas de app).
-- Firestore é o backend partilhado — os dois códigos falam com a mesma
-  base de dados, cada um com as suas colecções (`users/**` a app cliente,
-  `staff/**`+`institutions/**` esta app).
+- O Postgres do Supabase é o backend partilhado — os dois códigos falam
+  com a mesma base de dados, com RLS a isolar o que cada papel pode ver
+  (ver `docs/security-rls.md`).
 
 ## Stack
 
-React 19 + TypeScript + Vite · `react-router-dom` · `firebase` (Auth +
-Firestore, client SDK) · `firebase-admin` (só para o script de seed local).
+React 19 + TypeScript + Vite · `react-router-dom` · `@supabase/supabase-js`
+(Auth + Postgres + Realtime, client SDK) · `firebase-admin` (só para os
+scripts de operação em `scripts/`, que leem o arquivo histórico no
+Firestore — não faz parte da app; ver "Histórico" abaixo).
 
-## Modelo de dados (Firestore)
+## Modelo de dados (Postgres/Supabase)
+
+Ver `docs/database-design.md` para o schema completo. Resumo:
 
 ```
-staff/{uid}                                    → { name, role: 'agent'|'manager', institutionId, branchId, counterId? }
-institutions/{institutionId}                   → { name }
-institutions/{institutionId}/branches/{branchId}
-  /counters/{counterId}                        → { label, status: 'available'|'serving'|'paused', currentTicketId, agentName }
-  /tickets/{ticketId}                          → { code, service, priority, status, counterId, createdAt, calledAt, doneAt }
-  /liveBoard/current                           → { current: {code, counterLabel}, history: [...], updatedAt }
+institutions(id, name)
+branches(institution_id, id, name)
+counters(institution_id, branch_id, id, label, status, current_ticket_id, current_agent_id)
+staff(id = auth.users.id, name, role: 'agent'|'manager', institution_id, branch_id, counter_id?)
+tickets(id, institution_id, branch_id, code, service, priority, status, counter_id, customer_id, created_at, called_at, done_at, ...)
+ticket_calls(id, institution_id, branch_id, ticket_id, code, counter_label, called_at)  -- log append-only, substitui o antigo "liveBoard"
+appointments(code, institution_id, branch_id, customer_id, service, date, time, status)
+ratings(id, ticket_id, institution_id, branch_id, customer_id, overall, recommend, comment, aspect_*)
+notifications(id, user_id, title, subtitle, read, created_at)
+user_settings(user_id, queue_alerts, appointment_reminders, promotions, whatsapp, language)
+branch_counters(institution_id, branch_id, seq)  -- sequência atómica para códigos de senha/agendamento
 ```
 
-`institutionId`/`branchId` estão fixos no piloto (`banco-exemplo` /
-`agencia-maianga`, ver `.env.example`) — passam a vir de `staff/{uid}`
-(agente/gestor) ou de variável de ambiente por dispositivo (painel
-público de cada agência) quando houver mais do que uma instituição.
+Toda a mutação (tirar/chamar/concluir/transferir/cancelar/pausar) passa
+por funções RPC `SECURITY DEFINER` (`supabase/migrations/*_rpc_functions.sql`)
+— nunca por `INSERT`/`UPDATE` directo do cliente. `institutionId`/
+`branchId` estão fixos por instância publicada (ver `.env.example`) —
+seis instituições reais já activas em produção.
 
-## Correr localmente (contra o emulador — nunca contra produção)
+## Correr localmente
 
 ```bash
 npm install
-npm run emulators        # terminal 1 — Firestore + Auth locais (porta 8080/9099, UI em 4001)
-npm run seed              # terminal 2 — cria instituição/balcões/senhas de exemplo + 2 contas de staff
-npm run dev:emulator      # terminal 3 — Vite, já ligado ao emulador
+npm run dev      # Vite, já ligado ao projecto Supabase real (ver .env.local)
 ```
 
-Contas de teste criadas pelo `seed`:
-- `agente@filacerta.test` / `teste123` → `/agente` (Balcão 3)
-- `gestor@filacerta.test` / `teste123` → `/dashboard`
-- `/painel` → ecrã público, sem login (sessão anónima automática)
+Contas de staff de teste (password `teste123` para todas):
+- `agente@filacerta.test` / `gestor@filacerta.test` → Banco Exemplo
+- `agente@bpc.test` / `gestor@bpc.test`, e equivalentes para `bfa`/`bai`/`bci`/`siac`
+- `/painel` → ecrã público, sem login (sessão anónima do Supabase)
 
-## Ligar à produção (`filacerta-d74f0`)
-
-1. **Firestore Rules** — publicadas (`npm run deploy:rules`, ou
-   `firebase deploy --only firestore:rules --project filacerta-d74f0`).
-   Sempre que voltares a mudar `firestore.rules` aqui, replicar a mesma
-   mudança em `projectogestaodefilas/firestore.rules` antes de publicar
-   outra vez — os dois têm de se manter idênticos.
-2. **Autenticação anónima** — activar em Firebase Console → Authentication
-   → Sign-in method → Anonymous, se ainda não estiver. Só possível pela
-   consola, não há comando de CLI para isto. O painel público (`/painel`)
-   não funciona contra produção sem isto.
-3. **Contas reais de staff + dados de exemplo** — `npm run seed:prod`
-   (variante de produção do `seed.mjs`, ver comentário no topo do
-   ficheiro `scripts/seed-prod.mjs` para como gerar a credencial
-   necessária). Idempotente, pode correr mais do que uma vez.
-4. Copiar `.env.example` para `.env.local` com `VITE_USE_EMULATOR=false`
-   e os IDs reais de instituição/agência, depois `npm run dev` (sem
-   `:emulator`) para testar contra produção.
+Não há emulador local — o desenvolvimento corre sempre contra o projecto
+Supabase real (`qdfpqispcntitvczybfl`), com contas/dados de teste
+isolados por instituição.
 
 ## Estrutura
 
 ```
 src/
-├── firebase.ts        # init do SDK — mesma config web do projecto Firebase da app cliente
+├── supabase.ts          # init do cliente Supabase (URL + publishable key)
 ├── types.ts
-├── auth/AuthContext.tsx
-├── lib/queue.ts        # toda a lógica de leitura/escrita no Firestore (subscribe*/callNext/etc.)
+├── auth/AuthContext.tsx  # Supabase Auth (staff)
+├── lib/queue.ts          # toda a leitura (postgres_changes + refetch)/escrita (RPC) na fila
 ├── pages/
 │   ├── Login.tsx
-│   ├── AgentScreen.tsx  # /agente
-│   ├── PublicDisplay.tsx # /painel
-│   └── Dashboard.tsx    # /dashboard
-└── styles/tokens.css    # tokens de marca (fc-*) — mesmos valores do mockup/design system SeguroCerto
-scripts/seed.mjs          # dados de exemplo, só contra o emulador
+│   ├── AgentScreen.tsx   # /agente
+│   ├── PublicDisplay.tsx # /painel (sessão anónima)
+│   └── Dashboard.tsx     # /dashboard
+└── styles/tokens.css     # tokens de marca (fc-*)
+supabase/migrations/       # schema, RLS, RPCs -- fonte da verdade do backend
+scripts/                   # ferramentas de operação (ver "Histórico" abaixo) + testes de integração reais (test-*.mjs)
+docs/                      # auditoria, arquitectura, segurança, testes -- ver docs/migration-plan.md para o histórico completo
 ```
+
+## Histórico: migração Firebase → Supabase
+
+Este projecto começou sobre Firebase (Auth + Firestore). Foi migrado por
+completo para Supabase — **Firebase foi removido definitivamente do
+código** (não há `firebase`/`cloud_firestore`/`firebase_auth` em nenhum
+dos dois repositórios). O projecto Firebase original (`filacerta-d74f0`)
+guarda só um arquivo histórico do Firestore de antes da migração
+(`scripts/backup-firestore.mjs`/`count-firestore-data.mjs` continuam a
+usar `firebase-admin` só para consultar esse arquivo, nunca para a app
+em produção) e continua a servir o Hosting das duas apps (não migrado —
+decisão explícita, ver `docs/migration-plan.md`, Fase 14/15).
+
+Ver `docs/migration-plan.md` para o histórico fase a fase completo,
+`docs/security-rls.md` para o modelo de segurança actual, e
+`docs/frontend-migration-audit.md` para a confirmação de que não resta
+nenhuma dependência funcional de Firebase.
 
 ## Estado actual
 
-Protótipo funcional contra o emulador local: login por papel (agente/
+Funcional em produção contra o Supabase real: login por papel (agente/
 gestor), fluxo completo de chamada de senha (chamar/concluir/não
 compareceu/transferir/pausar) sincronizado em tempo real entre `/agente`,
-`/painel` e `/dashboard`. Nunca testado contra o Firebase de produção —
-ver secção "Ligar à produção" acima antes de o fazer.
+`/painel` e `/dashboard`, com RLS a isolar cada instituição/filial (ver
+`docs/security-rls.md`).
