@@ -42,6 +42,15 @@ jobs:
         run: npm run lint
 
       - name: Build
+        env:
+          # Não secretas -- ver src/supabase.ts e .env.example (a
+          # "publishable key" nunca controla acesso, isso é feito só por
+          # RLS). Sem isto, `src/supabase.ts` lança logo no arranque e a
+          # app fica com ecrã em branco -- exactamente o que faltava
+          # aqui até esta correcção (o smoke test do deploy só confirma
+          # que o HTML carrega, não que a app chega a desenhar algo).
+          VITE_SUPABASE_URL: https://qdfpqispcntitvczybfl.supabase.co
+          VITE_SUPABASE_ANON_KEY: sb_publishable_HLelr-FOPvSL9a5w8_feUw_FfKIrOoQ
         run: npm run build
 
       - name: Sem segredos acidentais (service_role, .env, chaves privadas)
@@ -150,7 +159,19 @@ jobs:
       - run: npm ci
 
       - name: Build para GitHub Pages (base path /Fila-certa/)
+        env:
+          VITE_SUPABASE_URL: https://qdfpqispcntitvczybfl.supabase.co
+          VITE_SUPABASE_ANON_KEY: sb_publishable_HLelr-FOPvSL9a5w8_feUw_FfKIrOoQ
         run: npx tsc -b && npx vite build --base=/Fila-certa/
+
+      - name: Confirmar que o URL do Supabase ficou embutido no bundle
+        run: |
+          set -e
+          if ! grep -rq "qdfpqispcntitvczybfl.supabase.co" dist/assets/*.js; then
+            echo "::error::VITE_SUPABASE_URL não ficou embutido no bundle -- a app publicada ficaria com ecrã em branco (src/supabase.ts lança logo no arranque sem isto)."
+            exit 1
+          fi
+          echo "OK: URL do Supabase presente no bundle."
 
       - name: Preparar artefacto (SPA fallback + .nojekyll)
         run: |
@@ -182,6 +203,18 @@ jobs:
           code=$(curl -s -o /tmp/index.html -w "%{http_code}" --max-time 20 https://paulinoquicassa.github.io/Fila-certa/)
           test "$code" = "200" || { echo "::error::HTTP $code na app publicada."; exit 1; }
           grep -q 'id="root"' /tmp/index.html || { echo "::error::index.html publicado não parece a app (sem #root)."; exit 1; }
+          # Confirma que o JS realmente referenciado pelo HTML publicado
+          # (não só o artefacto local desta corrida) tem o URL do
+          # Supabase embutido -- só o HTML carregar não prova que a app
+          # chega a desenhar algo (ver ecrã em branco corrigido nesta
+          # ronda: src/supabase.ts lança antes de qualquer render sem isto).
+          js_path=$(grep -oE '/Fila-certa/assets/index-[^"]+\.js' /tmp/index.html | head -1)
+          test -n "$js_path" || { echo "::error::Não encontrei o script principal no index.html publicado."; exit 1; }
+          curl -s --max-time 20 "https://paulinoquicassa.github.io${js_path}" -o /tmp/index.js
+          grep -q "qdfpqispcntitvczybfl.supabase.co" /tmp/index.js || {
+            echo "::error::O bundle publicado não tem o URL do Supabase embutido -- a app ficaria com ecrã em branco.";
+            exit 1;
+          }
           if grep -iE 'firebase|firestore' /tmp/index.html; then
             echo "::error::Referência a Firebase encontrada no HTML publicado."
             exit 1
