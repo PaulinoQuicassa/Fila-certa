@@ -46,13 +46,19 @@ export default function App() {
         <BrowserRouter basename={import.meta.env.BASE_URL}>
           <Routes>
             {/* Ecrã público de chamada — sem login de equipa, autenticação
-                anónima própria; é o que fica ligado permanentemente na TV. */}
+                anónima própria; é o que fica ligado permanentemente na TV.
+                /painel sozinho continua a mostrar o Banco Exemplo (como
+                sempre); /painel/:institutionId escolhe outra das 6
+                instituições reais do piloto (ver lib/pilotInstitutions.ts). */}
             <Route path="/painel" element={<PublicDisplay />} />
+            <Route path="/painel/:institutionId" element={<PublicDisplay />} />
 
             {/* Estação de auto-atendimento -- para quem chega
                 fisicamente ao balcão sem telemóvel/conta própria. Sem
-                login visível (sessão técnica própria, ver supabase.ts). */}
+                login visível (sessão técnica própria, ver supabase.ts).
+                Mesmo critério de /painel para escolher a instituição. */}
             <Route path="/estacao" element={<Estacao />} />
+            <Route path="/estacao/:institutionId" element={<Estacao />} />
 
             <Route path="/login" element={<LoginRoute />} />
             <Route
