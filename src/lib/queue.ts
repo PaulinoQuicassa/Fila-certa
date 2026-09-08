@@ -352,6 +352,21 @@ async function rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
   return data as T;
 }
 
+/** Tira uma senha nova -- mesma RPC que a app do cliente usa
+ * (`pull_ticket`, ver projectogestaodefilas/lib/ticket_service.dart).
+ * Usada pela estação de auto-atendimento (`/estacao`) para quem chega
+ * fisicamente ao balcão sem telemóvel/conta própria. O incremento
+ * atómico e a escrita acontecem inteiramente no servidor (RLS bloqueia
+ * INSERT directo em `tickets`). */
+export async function pullTicket(institutionId: string, branchId: string, service: string): Promise<string> {
+  const ticket = await rpc<{ code: string }>('pull_ticket', {
+    p_institution_id: institutionId,
+    p_branch_id: branchId,
+    p_service: service,
+  });
+  return ticket.code;
+}
+
 /** Chama a próxima senha em espera para o balcão do agente -- a escolha
  * da senha (por prioridade/transferência/ordem de chegada) é feita no
  * servidor, com bloqueio (`SKIP LOCKED`) para nunca haver dois balcões a
