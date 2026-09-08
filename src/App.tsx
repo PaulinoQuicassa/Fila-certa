@@ -5,6 +5,7 @@ import { Login } from './pages/Login';
 import { AgentScreen } from './pages/AgentScreen';
 import { Dashboard } from './pages/Dashboard';
 import { PublicDisplay } from './pages/PublicDisplay';
+import { Estacao } from './pages/Estacao';
 
 function RequireRole({ role, children }: { role: 'agent' | 'manager'; children: React.ReactNode }) {
   const { user, profile, loading } = useAuth();
@@ -47,6 +48,11 @@ export default function App() {
             {/* Ecrã público de chamada — sem login de equipa, autenticação
                 anónima própria; é o que fica ligado permanentemente na TV. */}
             <Route path="/painel" element={<PublicDisplay />} />
+
+            {/* Estação de auto-atendimento -- para quem chega
+                fisicamente ao balcão sem telemóvel/conta própria. Sem
+                login visível (sessão técnica própria, ver supabase.ts). */}
+            <Route path="/estacao" element={<Estacao />} />
 
             <Route path="/login" element={<LoginRoute />} />
             <Route

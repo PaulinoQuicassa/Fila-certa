@@ -23,3 +23,25 @@ export async function ensureAnonymousSession() {
     await supabase.auth.signInAnonymously();
   }
 }
+
+// Conta técnica partilhada por balcão -- usada só pela estação de
+// auto-atendimento (`Estacao.tsx`), sem login visível para o cidadão que
+// chega fisicamente ao balcão. Não é uma sessão anónima: `pull_ticket`
+// recusa explicitamente sessões anónimas ("apenas clientes autenticados
+// podem tirar senha"), por isso a estação precisa de uma conta real,
+// mas sem nenhum dado pessoal do cidadão associado -- todas as senhas
+// tiradas na estação ficam associadas a esta mesma conta técnica.
+// Mesmo tratamento de "não secreto" que o resto deste ficheiro: quem
+// está fisicamente à frente do quiosque já pode tirar uma senha à
+// vontade, expor a conta que faz exactamente isso não abre nenhuma
+// porta nova.
+const STATION_EMAIL = import.meta.env.VITE_STATION_EMAIL ?? 'estacao@filacerta.test';
+const STATION_PASSWORD = import.meta.env.VITE_STATION_PASSWORD ?? 'teste123';
+
+/** Garante a sessão da conta de estação -- usado só por `Estacao.tsx`. */
+export async function ensureStationSession() {
+  const { data } = await supabase.auth.getSession();
+  if (data.session) return;
+  const { error } = await supabase.auth.signInWithPassword({ email: STATION_EMAIL, password: STATION_PASSWORD });
+  if (error) throw new Error(`Conta de estação não configurada: ${error.message}`);
+}
