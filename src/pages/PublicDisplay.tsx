@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { ensureAnonymousSession } from '../supabase';
 import { subscribeBranchWaitStats, subscribeLiveBoard } from '../lib/queue';
+import { resolvePilotInstitution } from '../lib/pilotInstitutions';
 import type { LiveBoard } from '../types';
 
 /** Toca um sinal sonoro de duas notas (ding-dong) sem depender de um
@@ -27,13 +29,13 @@ function playCallChime() {
   setTimeout(() => ctx.close(), 1000);
 }
 
-// Institution/branch fixas para o piloto — ver README para como isto
-// deixa de ser hardcoded quando houver mais do que uma agência.
-const INSTITUTION_ID = import.meta.env.VITE_INSTITUTION_ID ?? 'banco-exemplo';
-const BRANCH_ID = import.meta.env.VITE_BRANCH_ID ?? 'agencia-maianga';
-const INSTITUTION_NAME = import.meta.env.VITE_INSTITUTION_NAME ?? 'Banco Exemplo · Agência Maianga';
-
 export function PublicDisplay() {
+  // /painel (sem parâmetro) continua a mostrar o Banco Exemplo, como
+  // sempre -- /painel/:institutionId escolhe qualquer uma das 6
+  // instituições reais do piloto (ver lib/pilotInstitutions.ts).
+  const { institutionId: routeInstitutionId } = useParams<{ institutionId?: string }>();
+  const { institutionId: INSTITUTION_ID, branchId: BRANCH_ID, name: INSTITUTION_NAME } = resolvePilotInstitution(routeInstitutionId);
+
   const [board, setBoard] = useState<LiveBoard>({ current: null, history: [], updatedAt: null });
   const [avg, setAvg] = useState<number | null>(null);
   const [time, setTime] = useState(() => new Date());
@@ -60,7 +62,7 @@ export function PublicDisplay() {
       unsubBoard();
       unsubStats();
     };
-  }, [ready]);
+  }, [ready, INSTITUTION_ID, BRANCH_ID]);
 
   useEffect(() => {
     const id = setInterval(() => setTime(new Date()), 1000 * 30);

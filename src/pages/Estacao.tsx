@@ -1,18 +1,8 @@
 import { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { ensureStationSession } from '../supabase';
 import { pullTicket } from '../lib/queue';
-
-// Instituição/filial fixas para o piloto -- mesmo critério de
-// PublicDisplay.tsx (deixa de ser hardcoded quando houver mais do que
-// uma agência real).
-const INSTITUTION_ID = import.meta.env.VITE_INSTITUTION_ID ?? 'banco-exemplo';
-const BRANCH_ID = import.meta.env.VITE_BRANCH_ID ?? 'agencia-maianga';
-const INSTITUTION_NAME = import.meta.env.VITE_INSTITUTION_NAME ?? 'Banco Exemplo · Agência Maianga';
-
-// Mesmos 4 serviços do piloto usados na app do cliente
-// (projectogestaodefilas/lib/data/mock_data.dart, `pilotServices`) --
-// os textos têm de bater certo dos dois lados.
-const SERVICES = ['Abertura de conta', 'Cartão bancário', 'Empréstimo', 'Reclamação'];
+import { resolvePilotInstitution } from '../lib/pilotInstitutions';
 
 // Depois de mostrar a senha, volta sozinho ao ecrã de escolha de
 // serviço -- um quiosque físico não deve ficar preso à espera de
@@ -28,6 +18,13 @@ type Stage = 'loading' | 'ready' | 'pulling' | 'done' | 'error';
  * associadas à conta técnica de estação (`ensureStationSession`), nunca
  * a uma pessoa identificável. */
 export function Estacao() {
+  // /estacao (sem parâmetro) continua a mostrar o Banco Exemplo, como
+  // sempre -- /estacao/:institutionId escolhe qualquer uma das 6
+  // instituições reais do piloto (ver lib/pilotInstitutions.ts).
+  const { institutionId: routeInstitutionId } = useParams<{ institutionId?: string }>();
+  const { institutionId: INSTITUTION_ID, branchId: BRANCH_ID, name: INSTITUTION_NAME, services: SERVICES } =
+    resolvePilotInstitution(routeInstitutionId);
+
   const [stage, setStage] = useState<Stage>('loading');
   const [ticketCode, setTicketCode] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
