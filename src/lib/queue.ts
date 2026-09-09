@@ -19,6 +19,8 @@ type TicketRow = {
   no_show_reason: Ticket['noShowReason'];
   was_transferred: boolean;
   customer_on_the_way: boolean;
+  customer_arrived_at: string | null;
+  customer_delay_reported_at: string | null;
 };
 
 function ticketFromRow(row: TicketRow): Ticket {
@@ -36,11 +38,13 @@ function ticketFromRow(row: TicketRow): Ticket {
     noShowReason: row.no_show_reason,
     wasTransferred: row.was_transferred,
     customerOnTheWay: row.customer_on_the_way,
+    customerArrivedAt: toMillis(row.customer_arrived_at),
+    customerDelayReportedAt: toMillis(row.customer_delay_reported_at),
   };
 }
 
 const TICKET_COLUMNS =
-  'id, code, service, priority, status, counter_id, created_at, called_at, done_at, transferred_to_counter_id, no_show_reason, was_transferred, customer_on_the_way';
+  'id, code, service, priority, status, counter_id, created_at, called_at, done_at, transferred_to_counter_id, no_show_reason, was_transferred, customer_on_the_way, customer_arrived_at, customer_delay_reported_at';
 
 /** Assina mudanças numa tabela filtrada por `branch_id` e chama `refetch`
  * sempre que algo muda -- o filtro do canal só decide QUANDO voltar a ler,

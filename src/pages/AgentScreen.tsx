@@ -161,6 +161,16 @@ export function AgentScreen() {
                       Cliente a caminho
                     </span>
                   )}
+                  {currentTicket.customerArrivedAt && (
+                    <span className="fc-pill" style={{ background: 'var(--fc-blue-light)', color: 'var(--fc-blue-dark)' }}>
+                      Cliente chegou ao local
+                    </span>
+                  )}
+                  {currentTicket.customerDelayReportedAt && !currentTicket.customerArrivedAt && (
+                    <span className="fc-pill" style={{ background: 'var(--fc-orange-bg)', color: 'var(--fc-orange)' }}>
+                      Cliente avisou atraso
+                    </span>
+                  )}
                 </div>
               </div>
 
