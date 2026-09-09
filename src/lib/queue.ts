@@ -1,5 +1,5 @@
 import { supabase } from '../supabase';
-import type { Appointment, Counter, LiveBoard, Rating, Ticket } from '../types';
+import type { Appointment, Counter, LiveBoard, Rating, StaffMember, Ticket } from '../types';
 
 function toMillis(value: string | null | undefined): number | null {
   return value ? new Date(value).getTime() : null;
@@ -127,7 +127,10 @@ type CounterRow = {
   status: Counter['status'];
   current_ticket_id: string | null;
   current_agent_name: string | null;
+  services: string[] | null;
 };
+
+const COUNTER_COLUMNS = 'id, label, status, current_ticket_id, current_agent_name, services';
 
 export function subscribeCounter(
   institutionId: string,
@@ -138,7 +141,7 @@ export function subscribeCounter(
   async function refetch() {
     const { data } = await supabase
       .from('counters_with_agent')
-      .select('id, label, status, current_ticket_id, current_agent_name')
+      .select(COUNTER_COLUMNS)
       .eq('institution_id', institutionId)
       .eq('branch_id', branchId)
       .eq('id', counterId)
@@ -155,6 +158,7 @@ function counterFromRow(row: CounterRow): Counter {
     status: row.status,
     currentTicketId: row.current_ticket_id,
     agentName: row.current_agent_name,
+    services: row.services,
   };
 }
 
@@ -166,7 +170,7 @@ export function subscribeCounters(
   async function refetch() {
     const { data } = await supabase
       .from('counters_with_agent')
-      .select('id, label, status, current_ticket_id, current_agent_name')
+      .select(COUNTER_COLUMNS)
       .eq('institution_id', institutionId)
       .eq('branch_id', branchId)
       .order('label', { ascending: true });
@@ -416,5 +420,43 @@ export async function setCounterPaused(institutionId: string, branchId: string, 
     p_branch_id: branchId,
     p_counter_id: counterId,
     p_paused: paused,
+  });
+}
+
+type StaffRow = { id: string; name: string; role: StaffMember['role']; counter_id: string | null };
+
+/** Roster da filial (nome/papel/balcão atribuído) -- só para o gestor
+ * configurar quem atende cada balcão (ecrã "Gerir Balcões" do Dashboard).
+ * Sem Realtime (só muda por acção do próprio gestor -- refeito a seguir
+ * a cada `assignCounterAgent`, ver ManageCounters.tsx). */
+export async function listBranchStaff(institutionId: string, branchId: string): Promise<StaffMember[]> {
+  const rows = await rpc<StaffRow[]>('list_branch_staff', { p_institution_id: institutionId, p_branch_id: branchId });
+  return rows.map((r) => ({ id: r.id, name: r.name, role: r.role, counterId: r.counter_id }));
+}
+
+/** Define os serviços atendidos por um balcão -- `services` vazio volta
+ * a "todos os serviços" (comportamento actual, sem restrição). */
+export async function setCounterServices(institutionId: string, branchId: string, counterId: string, services: string[]) {
+  await rpc('set_counter_services', {
+    p_institution_id: institutionId,
+    p_branch_id: branchId,
+    p_counter_id: counterId,
+    p_services: services,
+  });
+}
+
+/** Atribui (ou liberta, com `agentId: null`) o colaborador de um balcão
+ * -- um balcão só tem um de cada vez, atribuir substitui quem lá estava. */
+export async function assignCounterAgent(
+  institutionId: string,
+  branchId: string,
+  counterId: string,
+  agentId: string | null,
+) {
+  await rpc('assign_counter_agent', {
+    p_institution_id: institutionId,
+    p_branch_id: branchId,
+    p_counter_id: counterId,
+    p_agent_id: agentId,
   });
 }

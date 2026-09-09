@@ -62,10 +62,18 @@ export function AgentScreen() {
   const waitMin = minutesAgo(currentTicket?.createdAt ?? null);
   const isPaused = counter?.status === 'paused';
 
-  // Senhas que este balcão pode chamar: as da fila geral, mais as que
-  // foram transferidas especificamente para aqui (essas vêm primeiro).
+  // Senhas que este balcão pode chamar: as transferidas especificamente
+  // para aqui (essas vêm sempre primeiro, ver call_next() -- uma
+  // transferência é uma decisão humana explícita, ignora a configuração
+  // de serviços do balcão), mais as da fila geral cujo serviço este
+  // balcão atende (counter.services nulo/vazio = atende todos, igual ao
+  // comportamento antes de existir esta configuração).
   const eligibleQueue = queue
-    .filter((t) => t.transferredToCounterId === null || t.transferredToCounterId === counterId)
+    .filter((t) => {
+      if (t.transferredToCounterId !== null) return t.transferredToCounterId === counterId;
+      const services = counter?.services;
+      return !services || services.length === 0 || services.includes(t.service);
+    })
     .sort((a, b) => {
       const aMine = a.transferredToCounterId === counterId ? 0 : 1;
       const bMine = b.transferredToCounterId === counterId ? 0 : 1;

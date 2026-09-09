@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { subscribeAppointmentsToday, subscribeCounters, subscribeRatingsToday, subscribeTicketsToday } from '../lib/queue';
+import { ManageCounters } from './ManageCounters';
 import type { Appointment, Counter, Rating, RatingAspects, Ticket } from '../types';
 
 const SLA_MINUTES = 15;
@@ -224,6 +225,8 @@ export function Dashboard() {
           )}
         </div>
       </div>
+
+      <ManageCounters institutionId={institutionId} branchId={branchId} counters={counters} />
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ fontSize: 17, fontWeight: 700 }}>Vista por Balcão / Agente</div>
