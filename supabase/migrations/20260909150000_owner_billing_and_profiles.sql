@@ -267,6 +267,12 @@ $$;
 -- owner_list_staff / owner_list_owners -- passam a incluir o perfil.
 -- ---------------------------------------------------------------------
 
+-- Ganham colunas novas no resultado -- `create or replace` não permite
+-- mudar o tipo de retorno de uma função existente, tem de se apagar
+-- primeiro.
+drop function if exists public.owner_list_staff();
+drop function if exists public.owner_list_owners();
+
 create or replace function public.owner_list_staff()
 returns table (
   id uuid, email text, name text, role staff_role, institution_id text, branch_id text, counter_id text,
