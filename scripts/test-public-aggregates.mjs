@@ -26,19 +26,27 @@ async function deleteAuthUser(uid) {
 
 async function main() {
   const emailC = `teste-agg-c-${Date.now()}@example.com`;
+  const emailC2 = `teste-agg-c2-${Date.now()}@example.com`;
   const emailNoTicket = `teste-agg-nt-${Date.now()}@example.com`;
   const customerId = await createTestCustomer(emailC, 'senha123456');
+  const customer2Id = await createTestCustomer(emailC2, 'senha123456');
   const noTicketId = await createTestCustomer(emailNoTicket, 'senha123456');
   const customer = createClient(URL, ANON_KEY);
+  const customer2 = createClient(URL, ANON_KEY);
   const noTicketCustomer = createClient(URL, ANON_KEY);
   const anon = createClient(URL, ANON_KEY);
   await customer.auth.signInWithPassword({ email: emailC, password: 'senha123456' });
+  await customer2.auth.signInWithPassword({ email: emailC2, password: 'senha123456' });
   await noTicketCustomer.auth.signInWithPassword({ email: emailNoTicket, password: 'senha123456' });
   await anon.auth.signInAnonymously();
 
   const { data: t1 } = await customer.rpc('pull_ticket', { p_institution_id: 'bpc', p_branch_id: 'agencia-talatona', p_service: 'Abertura de Conta' });
   const { data: t2 } = await customer.rpc('pull_ticket', { p_institution_id: 'bpc', p_branch_id: 'agencia-talatona', p_service: 'Crédito Habitação' });
-  const { data: t3 } = await customer.rpc('pull_ticket', { p_institution_id: 'bpc', p_branch_id: 'agencia-talatona', p_service: 'Abertura de Conta' });
+  // t3 é de um SEGUNDO cliente, não do mesmo -- desde a regra "uma senha
+  // activa por serviço" (20260909120000_one_ticket_per_service.sql), o
+  // mesmo cliente já não pode pedir uma segunda "Abertura de Conta"
+  // enquanto a primeira continuar activa.
+  const { data: t3 } = await customer2.rpc('pull_ticket', { p_institution_id: 'bpc', p_branch_id: 'agencia-talatona', p_service: 'Abertura de Conta' });
 
   console.log('\n1. branch_queue_summary: cliente sem nenhuma senha ali consegue ver o agregado (informação pública da fila)');
   const summary = await noTicketCustomer.rpc('branch_queue_summary', { p_institution_id: 'bpc', p_branch_id: 'agencia-talatona' });
@@ -51,7 +59,7 @@ async function main() {
   }
 
   console.log('\n2. waiting_ahead_count: cliente vê quantas senhas o precedem, sem ver as linhas alheias');
-  const ahead = await customer.rpc('waiting_ahead_count', { p_ticket_id: t3.id });
+  const ahead = await customer2.rpc('waiting_ahead_count', { p_ticket_id: t3.id });
   if (!ahead.error && ahead.data === 2) {
     ok(`t3 tem 2 senhas à frente (t1 e t2), confirmado sem expor as linhas de t1/t2 a mais ninguém`);
   } else {
@@ -90,6 +98,7 @@ async function main() {
   await svc.from('tickets').delete().in('id', [t1.id, t2.id, t3.id]);
   await svc.from('counters').update({ status: 'available', current_ticket_id: null, current_agent_id: null }).eq('institution_id', 'bpc').eq('branch_id', 'agencia-talatona').eq('id', 'guiche-1');
   await deleteAuthUser(customerId);
+  await deleteAuthUser(customer2Id);
   await deleteAuthUser(noTicketId);
 
   console.log(failures === 0 ? '\nTUDO OK -- agregados públicos-operacionais validados.\n' : `\n${failures} verificação(ões) falharam.\n`);
