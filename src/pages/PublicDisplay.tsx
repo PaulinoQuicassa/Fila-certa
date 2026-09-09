@@ -1,15 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
-import { signInAnonymously } from 'firebase/auth';
-import { auth } from '../firebase';
-import { subscribeLiveBoard, subscribeTicketsToday } from '../lib/queue';
-import type { LiveBoard, Ticket } from '../types';
+import { useParams } from 'react-router-dom';
+import { ensureAnonymousSession } from '../supabase';
+import { subscribeBranchWaitStats, subscribeLiveBoard } from '../lib/queue';
+import { resolvePilotInstitution } from '../lib/pilotInstitutions';
+import type { LiveBoard } from '../types';
+
+function getAudioCtxCtor() {
+  return window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+}
 
 /** Toca um sinal sonoro de duas notas (ding-dong) sem depender de um
- * ficheiro de áudio — gerado via Web Audio API. */
-function playCallChime() {
-  const AudioCtx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-  if (!AudioCtx) return;
-  const ctx = new AudioCtx();
+ * ficheiro de áudio — gerado via Web Audio API, no [AudioContext]
+ * partilhado (persistente) passado por quem chama -- criar um novo de
+ * cada vez, como acontecia antes, arrisca ficar sempre "suspended" (a
+ * política de autoplay dos browsers só desbloqueia áudio depois de uma
+ * interacção do utilizador na página; um painel de TV sem ninguém a
+ * tocar nunca teria essa interacção). */
+function playCallChime(ctx: AudioContext) {
   const notes: Array<[frequency: number, start: number]> = [[880, 0], [660, 0.22]];
   notes.forEach(([frequency, start]) => {
     const osc = ctx.createOscillator();
@@ -25,37 +32,53 @@ function playCallChime() {
     osc.start(t0);
     osc.stop(t0 + 0.4);
   });
-  setTimeout(() => ctx.close(), 1000);
-}
-
-// Institution/branch fixas para o piloto — ver README para como isto
-// deixa de ser hardcoded quando houver mais do que uma agência.
-const INSTITUTION_ID = import.meta.env.VITE_INSTITUTION_ID ?? 'banco-exemplo';
-const BRANCH_ID = import.meta.env.VITE_BRANCH_ID ?? 'agencia-maianga';
-const INSTITUTION_NAME = import.meta.env.VITE_INSTITUTION_NAME ?? 'Banco Exemplo · Agência Maianga';
-
-function average(tickets: Ticket[]): number | null {
-  const done = tickets.filter((t) => t.calledAt && t.createdAt);
-  if (done.length === 0) return null;
-  const total = done.reduce((sum, t) => sum + (t.calledAt! - t.createdAt), 0);
-  return Math.round(total / done.length / 60000);
 }
 
 export function PublicDisplay() {
+  // /painel (sem parâmetro) continua a mostrar o Banco Exemplo, como
+  // sempre -- /painel/:institutionId escolhe qualquer uma das 6
+  // instituições reais do piloto (ver lib/pilotInstitutions.ts).
+  const { institutionId: routeInstitutionId } = useParams<{ institutionId?: string }>();
+  const { institutionId: INSTITUTION_ID, branchId: BRANCH_ID, name: INSTITUTION_NAME } = resolvePilotInstitution(routeInstitutionId);
+
   const [board, setBoard] = useState<LiveBoard>({ current: null, history: [], updatedAt: null });
-  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [avg, setAvg] = useState<number | null>(null);
   const [time, setTime] = useState(() => new Date());
   const [ready, setReady] = useState(false);
+  const [needsSoundUnlock, setNeedsSoundUnlock] = useState(false);
   const lastCalledAt = useRef<number | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
+  // Um só AudioContext para todo o tempo de vida do painel (não um novo
+  // por chamada) -- criado logo ao carregar para se conseguir saber
+  // desde já se o browser o deixou correr ('running') ou se está à
+  // espera de uma interacção ('suspended'), e mostrar o aviso de
+  // desbloqueio de som só quando for mesmo preciso.
+  useEffect(() => {
+    const AudioCtx = getAudioCtxCtor();
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    audioCtxRef.current = ctx;
+    setNeedsSoundUnlock(ctx.state !== 'running');
+    return () => {
+      ctx.close();
+    };
+  }, []);
+
+  function unlockSound() {
+    const ctx = audioCtxRef.current;
+    if (!ctx) return;
+    ctx.resume().then(() => setNeedsSoundUnlock(ctx.state !== 'running'));
+  }
 
   useEffect(() => {
-    signInAnonymously(auth).finally(() => setReady(true));
+    ensureAnonymousSession().finally(() => setReady(true));
   }, []);
 
   useEffect(() => {
     if (board.updatedAt === null) return;
-    if (lastCalledAt.current !== null && board.updatedAt !== lastCalledAt.current) {
-      playCallChime();
+    if (lastCalledAt.current !== null && board.updatedAt !== lastCalledAt.current && audioCtxRef.current) {
+      playCallChime(audioCtxRef.current);
     }
     lastCalledAt.current = board.updatedAt;
   }, [board.updatedAt]);
@@ -63,19 +86,18 @@ export function PublicDisplay() {
   useEffect(() => {
     if (!ready) return;
     const unsubBoard = subscribeLiveBoard(INSTITUTION_ID, BRANCH_ID, setBoard);
-    const unsubTickets = subscribeTicketsToday(INSTITUTION_ID, BRANCH_ID, setTickets);
+    const unsubStats = subscribeBranchWaitStats(INSTITUTION_ID, BRANCH_ID, setAvg);
     return () => {
       unsubBoard();
-      unsubTickets();
+      unsubStats();
     };
-  }, [ready]);
+  }, [ready, INSTITUTION_ID, BRANCH_ID]);
 
   useEffect(() => {
     const id = setInterval(() => setTime(new Date()), 1000 * 30);
     return () => clearInterval(id);
   }, []);
 
-  const avg = average(tickets);
   const timeLabel = time.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
 
   return (
@@ -86,6 +108,23 @@ export function PublicDisplay() {
         background: 'radial-gradient(120% 140% at 50% -10%, #163a63 0%, #0c2138 55%, #081729 100%)',
       }}
     >
+      {needsSoundUnlock && (
+        <button
+          onClick={unlockSound}
+          style={{
+            position: 'absolute', inset: 0, zIndex: 10, width: '100%', height: '100%', border: 'none',
+            background: 'rgba(8,23,41,0.92)', color: '#fff', cursor: 'pointer',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16,
+          }}
+        >
+          <span style={{ fontSize: 48 }}>🔊</span>
+          <span style={{ fontSize: 24, fontWeight: 700 }}>Toque para ativar o som das chamadas</span>
+          <span style={{ fontSize: 14, color: 'rgba(255,255,255,0.6)' }}>
+            Só é preciso uma vez -- o browser bloqueia som até haver uma interacção nesta página.
+          </span>
+        </button>
+      )}
+
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span style={{ fontSize: 20, fontWeight: 700 }}>{INSTITUTION_NAME}</span>
         <span style={{ fontSize: 26, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{timeLabel}</span>

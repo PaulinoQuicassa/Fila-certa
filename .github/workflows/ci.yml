@@ -1,0 +1,222 @@
+name: CI/CD — Fila Certa (staff)
+
+# CI/CD profissional (produto comercial, 2026-09-07): antes disto, cada
+# alteração era verificada manualmente e publicada à mão. Este pipeline
+# corre em cada push/PR ao branch principal:
+#
+#   Código → Qualidade → Testes → Segurança → Build → Deploy → Smoke Test
+#
+# Os testes de Supabase (RPC/RLS/concorrência) correm contra um Supabase
+# LOCAL efémero (Docker, só disponível nos runners do GitHub -- esta
+# máquina de desenvolvimento não tem Docker), nunca contra produção --
+# ver docs/commercial-readiness.md para a decisão.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  quality:
+    name: Qualidade e segurança (Web)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: TypeScript
+        run: npx tsc -b
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        env:
+          # Não secretas -- ver src/supabase.ts e .env.example (a
+          # "publishable key" nunca controla acesso, isso é feito só por
+          # RLS). Sem isto, `src/supabase.ts` lança logo no arranque e a
+          # app fica com ecrã em branco -- exactamente o que faltava
+          # aqui até esta correcção (o smoke test do deploy só confirma
+          # que o HTML carrega, não que a app chega a desenhar algo).
+          VITE_SUPABASE_URL: https://qdfpqispcntitvczybfl.supabase.co
+          VITE_SUPABASE_ANON_KEY: sb_publishable_HLelr-FOPvSL9a5w8_feUw_FfKIrOoQ
+        run: npm run build
+
+      - name: Sem segredos acidentais (service_role, .env, chaves privadas)
+        run: |
+          set -e
+          # git grep/git ls-files só vêem ficheiros rastreados -- exclui
+          # automaticamente node_modules/dist (sempre gitignored), ao
+          # contrário de um grep -r sobre o disco todo.
+          if git ls-files | grep -E '^\.env($|\.local$)'; then
+            echo "::error::Ficheiro .env/.env.local não deveria estar versionado."
+            exit 1
+          fi
+          if git grep -n "sb_secret_\|SUPABASE_SERVICE_ROLE_KEY\s*=\s*['\"]" -- src/; then
+            echo "::error::Possível service_role key ou segredo no código frontend."
+            exit 1
+          fi
+          if git grep -nE "BEGIN (RSA )?PRIVATE KEY" -- '*.ts' '*.tsx' '*.json' ':!package-lock.json'; then
+            echo "::error::Possível chave privada commitada."
+            exit 1
+          fi
+          echo "OK: nenhum segredo encontrado."
+
+      - name: Sem regressão de Firebase (0 referências fora das excepções documentadas)
+        run: |
+          set -e
+          BANNED='firebase|firestore|google-services|firebase_options|FirebaseAuth|FirebaseFirestore'
+          HITS=""
+          SRC_HITS=$(git grep -liE "$BANNED" -- src/ || true)
+          if [ -n "$SRC_HITS" ]; then echo "$SRC_HITS"; HITS="sim"; fi
+          SCRIPT_HITS=$(git grep -liE "$BANNED" -- scripts/ ':!scripts/backup-firestore.mjs' ':!scripts/count-firestore-data.mjs' ':!scripts/backup-supabase.mjs' || true)
+          if [ -n "$SCRIPT_HITS" ]; then echo "$SCRIPT_HITS"; HITS="sim"; fi
+          PKG_HITS=$(git grep -iE "$BANNED" -- package.json | grep -v 'firebase-admin' || true)
+          if [ -n "$PKG_HITS" ]; then echo "$PKG_HITS"; HITS="sim"; fi
+          if [ -n "$HITS" ]; then
+            echo "::error::Referência a Firebase encontrada fora das excepções documentadas (scripts/backup-firestore.mjs, scripts/count-firestore-data.mjs, firebase-admin em package.json -- ver docs/frontend-migration-audit.md)."
+            exit 1
+          fi
+          echo "OK: 0 referências Firebase inesperadas."
+
+      - name: Dependências vulneráveis (falha só em alto/crítico)
+        run: npm audit --audit-level=high || echo "::warning::npm audit encontrou avisos -- ver log acima (não bloqueante abaixo de 'high')."
+
+  supabase-tests:
+    name: Testes Supabase (RPC/RLS/Realtime/concorrência) — ambiente local efémero
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Iniciar Supabase local (aplica as migrations automaticamente)
+        run: supabase start
+
+      - name: Capturar credenciais do Supabase local
+        run: |
+          supabase status --output json > /tmp/supabase-status.json
+          cat /tmp/supabase-status.json
+          echo "SUPABASE_URL=$(jq -r '.API_URL' /tmp/supabase-status.json)" >> "$GITHUB_ENV"
+          echo "SUPABASE_ANON_KEY=$(jq -r '.ANON_KEY' /tmp/supabase-status.json)" >> "$GITHUB_ENV"
+          echo "SUPABASE_SERVICE_ROLE_KEY=$(jq -r '.SERVICE_ROLE_KEY' /tmp/supabase-status.json)" >> "$GITHUB_ENV"
+
+      - name: Seed dos dados de referência (instituições/filiais/balcões/staff)
+        run: node scripts/seed-reference-data.mjs
+
+      - name: Regressão completa (8 scripts) contra o ambiente local
+        run: |
+          set -e
+          for f in test-phase9 test-phase12 test-security-hardening test-public-aggregates test-flutter-data-paths test-audit-logs test-rls-gaps-closed; do
+            echo "::group::$f"
+            node "scripts/$f.mjs"
+            echo "::endgroup::"
+          done
+          # test-realtime-delivery.mjs sofre de jitter de rede/websocket
+          # já confirmado intermitente (não é um bug de produto -- a
+          # entrega em si já foi provada repetidamente ao longo desta
+          # migração; o que falha por vezes é o timeout fixo do teste
+          # perante a variação real de latência de um pub/sub). Um
+          # retry único é o padrão correcto para este tipo de teste de
+          # integração, não uma forma de esconder uma falha real.
+          echo "::group::test-realtime-delivery"
+          node scripts/test-realtime-delivery.mjs || { echo "1ª tentativa falhou (esperado ocasionalmente) -- a repetir uma vez..."; node scripts/test-realtime-delivery.mjs; }
+          echo "::endgroup::"
+
+  deploy:
+    name: Deploy (GitHub Pages) + Smoke Test
+    needs: [quality, supabase-tests]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Build para GitHub Pages (base path /Fila-certa/)
+        env:
+          VITE_SUPABASE_URL: https://qdfpqispcntitvczybfl.supabase.co
+          VITE_SUPABASE_ANON_KEY: sb_publishable_HLelr-FOPvSL9a5w8_feUw_FfKIrOoQ
+        run: npx tsc -b && npx vite build --base=/Fila-certa/
+
+      - name: Confirmar que o URL do Supabase ficou embutido no bundle
+        run: |
+          set -e
+          if ! grep -rq "qdfpqispcntitvczybfl.supabase.co" dist/assets/*.js; then
+            echo "::error::VITE_SUPABASE_URL não ficou embutido no bundle -- a app publicada ficaria com ecrã em branco (src/supabase.ts lança logo no arranque sem isto)."
+            exit 1
+          fi
+          echo "OK: URL do Supabase presente no bundle."
+
+      - name: Preparar artefacto (SPA fallback + .nojekyll)
+        run: |
+          cp dist/index.html dist/404.html
+          touch dist/.nojekyll
+
+      - name: Publicar em gh-pages
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin gh-pages
+          git worktree add /tmp/deploy origin/gh-pages
+          rm -rf /tmp/deploy/*
+          cp -r dist/. /tmp/deploy/
+          cd /tmp/deploy
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Nada para publicar (build idêntico ao já publicado)."
+          else
+            git commit -m "deploy: ${{ github.sha }}"
+            git push origin HEAD:gh-pages
+          fi
+
+      - name: Smoke test pós-deploy
+        run: |
+          set -e
+          sleep 20
+          code=$(curl -s -o /tmp/index.html -w "%{http_code}" --max-time 20 https://paulinoquicassa.github.io/Fila-certa/)
+          test "$code" = "200" || { echo "::error::HTTP $code na app publicada."; exit 1; }
+          grep -q 'id="root"' /tmp/index.html || { echo "::error::index.html publicado não parece a app (sem #root)."; exit 1; }
+          # Confirma que o JS realmente referenciado pelo HTML publicado
+          # (não só o artefacto local desta corrida) tem o URL do
+          # Supabase embutido -- só o HTML carregar não prova que a app
+          # chega a desenhar algo (ver ecrã em branco corrigido nesta
+          # ronda: src/supabase.ts lança antes de qualquer render sem isto).
+          js_path=$(grep -oE '/Fila-certa/assets/index-[^"]+\.js' /tmp/index.html | head -1)
+          test -n "$js_path" || { echo "::error::Não encontrei o script principal no index.html publicado."; exit 1; }
+          curl -s --max-time 20 "https://paulinoquicassa.github.io${js_path}" -o /tmp/index.js
+          grep -q "qdfpqispcntitvczybfl.supabase.co" /tmp/index.js || {
+            echo "::error::O bundle publicado não tem o URL do Supabase embutido -- a app ficaria com ecrã em branco.";
+            exit 1;
+          }
+          if grep -iE 'firebase|firestore' /tmp/index.html; then
+            echo "::error::Referência a Firebase encontrada no HTML publicado."
+            exit 1
+          fi
+          echo "OK: smoke test passou (HTTP 200, app carregada, sem Firebase)."

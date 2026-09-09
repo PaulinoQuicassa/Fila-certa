@@ -27,6 +27,8 @@ export interface Ticket {
   noShowReason: NoShowReason | null; // quem causou o status 'no_show'
   wasTransferred: boolean; // true assim que é transferida uma vez, nunca reposto
   customerOnTheWay: boolean; // o cliente avisou que está a caminho
+  customerArrivedAt: number | null; // o cliente confirmou que já chegou ao local
+  customerDelayReportedAt: number | null; // o cliente avisou que vai demorar mais um pouco
 }
 
 export type CounterStatus = 'available' | 'serving' | 'paused';
@@ -37,6 +39,14 @@ export interface Counter {
   status: CounterStatus;
   currentTicketId: string | null;
   agentName: string | null;
+  services: string[] | null; // null/vazio = atende todos os serviços (omissão)
+}
+
+export interface StaffMember {
+  id: string;
+  name: string;
+  role: StaffRole;
+  counterId: string | null; // balcão atribuído pelo gestor, ou nenhum
 }
 
 export interface LiveBoardEntry {

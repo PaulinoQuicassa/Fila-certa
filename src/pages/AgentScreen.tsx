@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
+import { reportError } from '../sentry';
 import {
   callNext,
   completeCurrent,
@@ -61,10 +62,18 @@ export function AgentScreen() {
   const waitMin = minutesAgo(currentTicket?.createdAt ?? null);
   const isPaused = counter?.status === 'paused';
 
-  // Senhas que este balcão pode chamar: as da fila geral, mais as que
-  // foram transferidas especificamente para aqui (essas vêm primeiro).
+  // Senhas que este balcão pode chamar: as transferidas especificamente
+  // para aqui (essas vêm sempre primeiro, ver call_next() -- uma
+  // transferência é uma decisão humana explícita, ignora a configuração
+  // de serviços do balcão), mais as da fila geral cujo serviço este
+  // balcão atende (counter.services nulo/vazio = atende todos, igual ao
+  // comportamento antes de existir esta configuração).
   const eligibleQueue = queue
-    .filter((t) => t.transferredToCounterId === null || t.transferredToCounterId === counterId)
+    .filter((t) => {
+      if (t.transferredToCounterId !== null) return t.transferredToCounterId === counterId;
+      const services = counter?.services;
+      return !services || services.length === 0 || services.includes(t.service);
+    })
     .sort((a, b) => {
       const aMine = a.transferredToCounterId === counterId ? 0 : 1;
       const bMine = b.transferredToCounterId === counterId ? 0 : 1;
@@ -79,6 +88,7 @@ export function AgentScreen() {
       await action();
     } catch (err) {
       console.error(err);
+      reportError(err, { institutionId, branchId, counterId, screen: 'AgentScreen' });
       setError(err instanceof Error ? err.message : 'Ocorreu um erro inesperado.');
     } finally {
       setBusy(false);
@@ -159,6 +169,16 @@ export function AgentScreen() {
                       Cliente a caminho
                     </span>
                   )}
+                  {currentTicket.customerArrivedAt && (
+                    <span className="fc-pill" style={{ background: 'var(--fc-blue-light)', color: 'var(--fc-blue-dark)' }}>
+                      Cliente chegou ao local
+                    </span>
+                  )}
+                  {currentTicket.customerDelayReportedAt && !currentTicket.customerArrivedAt && (
+                    <span className="fc-pill" style={{ background: 'var(--fc-orange-bg)', color: 'var(--fc-orange)' }}>
+                      Cliente avisou atraso
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -173,7 +193,7 @@ export function AgentScreen() {
                   <button
                     className="fc-btn fc-btn--secondary"
                     disabled={busy}
-                    onClick={() => run(() => markNoShow(institutionId, branchId, counterId, currentTicket.id))}
+                    onClick={() => run(() => markNoShow(institutionId, branchId, counterId))}
                   >
                     Libertar Balcão
                   </button>
@@ -186,7 +206,7 @@ export function AgentScreen() {
                 <button
                   className="fc-btn fc-btn--success"
                   disabled={busy}
-                  onClick={() => run(() => completeCurrent(institutionId, branchId, counterId, currentTicket.id))}
+                  onClick={() => run(() => completeCurrent(institutionId, branchId, counterId))}
                 >
                   Concluir Atendimento
                 </button>
@@ -194,7 +214,7 @@ export function AgentScreen() {
                   <button
                     className="fc-btn fc-btn--secondary"
                     disabled={busy}
-                    onClick={() => run(() => recallCurrent(institutionId, branchId, counter!.label, currentTicket))}
+                    onClick={() => run(() => recallCurrent(institutionId, branchId, counterId))}
                   >
                     Chamar Novamente
                   </button>
@@ -202,7 +222,7 @@ export function AgentScreen() {
                     className="fc-btn fc-btn--secondary"
                     style={{ color: 'var(--fc-danger)' }}
                     disabled={busy}
-                    onClick={() => run(() => markNoShow(institutionId, branchId, counterId, currentTicket.id))}
+                    onClick={() => run(() => markNoShow(institutionId, branchId, counterId))}
                   >
                     Não Compareceu
                   </button>
@@ -229,7 +249,7 @@ export function AgentScreen() {
                             disabled={busy}
                             onClick={() => {
                               setTransferOpen(false);
-                              run(() => transferTicket(institutionId, branchId, counterId, currentTicket.id, c.id));
+                              run(() => transferTicket(institutionId, branchId, counterId, c.id));
                             }}
                             style={{ textAlign: 'left', padding: '8px 10px', borderRadius: 'var(--fc-radius-md)', fontSize: 13.5, fontWeight: 600 }}
                           >
@@ -258,9 +278,7 @@ export function AgentScreen() {
                 className="fc-btn fc-btn--primary"
                 style={{ maxWidth: 280 }}
                 disabled={busy || isPaused || eligibleQueue.length === 0}
-                onClick={() =>
-                  run(() => callNext(institutionId, branchId, counterId, counter!.label, profile.name, eligibleQueue[0]))
-                }
+                onClick={() => run(() => callNext(institutionId, branchId, counterId))}
               >
                 Chamar Próxima →
               </button>

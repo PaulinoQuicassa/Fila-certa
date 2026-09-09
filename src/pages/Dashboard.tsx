@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { subscribeAppointmentsToday, subscribeCounters, subscribeRatingsToday, subscribeTicketsToday } from '../lib/queue';
+import { ManageCounters } from './ManageCounters';
 import type { Appointment, Counter, Rating, RatingAspects, Ticket } from '../types';
 
 const SLA_MINUTES = 15;
@@ -58,6 +59,17 @@ export function Dashboard() {
   const customerCancelled = tickets.filter((t) => t.noShowReason === 'customer_cancelled').length;
   const staffMarkedNoShow = tickets.filter((t) => t.noShowReason === 'staff_marked').length;
   const transferredCount = tickets.filter((t) => t.wasTransferred).length;
+  const onTheWayCount = tickets.filter((t) => t.customerOnTheWay).length;
+  const arrivedCount = tickets.filter((t) => t.customerArrivedAt !== null).length;
+  const delayReportedCount = tickets.filter((t) => t.customerDelayReportedAt !== null).length;
+  // Quanto tempo os clientes que confirmaram "Cheguei" demoram, desde
+  // serem chamados, a chegar mesmo ao balcão -- indicador real de
+  // qualidade da estimativa de tempo dada pela app (não existia nenhum
+  // sinal disto antes de "Cheguei" passar a gravar no servidor).
+  const arrivalTimes = tickets
+    .filter((t) => t.calledAt && t.customerArrivedAt)
+    .map((t) => Math.round((t.customerArrivedAt! - t.calledAt!) / 60000));
+  const avgArrivalTime = average(arrivalTimes);
   const avgOverallRating = averageFloat(ratings.map((r) => r.overall));
   const recommendPct = ratings.length
     ? Math.round((100 * ratings.filter((r) => r.recommend).length) / ratings.length)
@@ -146,6 +158,28 @@ export function Dashboard() {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ fontSize: 17, fontWeight: 700 }}>Comportamento do cliente durante a fila (hoje)</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 20 }}>
+          <div className="fc-card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--fc-text-secondary)' }}>Avisaram "a caminho"</div>
+            <div style={{ fontSize: 30, fontWeight: 800, color: 'var(--fc-green)' }}>{onTheWayCount}</div>
+          </div>
+          <div className="fc-card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--fc-text-secondary)' }}>Confirmaram chegada</div>
+            <div style={{ fontSize: 30, fontWeight: 800, color: 'var(--fc-blue-dark)' }}>{arrivedCount}</div>
+          </div>
+          <div className="fc-card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--fc-text-secondary)' }}>Avisaram atraso</div>
+            <div style={{ fontSize: 30, fontWeight: 800, color: 'var(--fc-orange)' }}>{delayReportedCount}</div>
+          </div>
+          <div className="fc-card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--fc-text-secondary)' }}>Tempo médio até chegar (após chamada)</div>
+            <div style={{ fontSize: 30, fontWeight: 800, color: 'var(--fc-blue-dark)' }}>{avgArrivalTime ?? '—'} min</div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ fontSize: 17, fontWeight: 700 }}>Qualidade do Atendimento (avaliações de hoje)</div>
         <div className="fc-card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
           {ratings.length === 0 ? (
@@ -191,6 +225,8 @@ export function Dashboard() {
           )}
         </div>
       </div>
+
+      <ManageCounters institutionId={institutionId} branchId={branchId} counters={counters} />
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ fontSize: 17, fontWeight: 700 }}>Vista por Balcão / Agente</div>

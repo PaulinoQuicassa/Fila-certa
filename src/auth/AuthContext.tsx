@@ -1,7 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../firebase';
+import type { User } from '@supabase/supabase-js';
+import { supabase } from '../supabase';
 import type { StaffProfile } from '../types';
 
 interface AuthState {
@@ -14,40 +13,66 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState | null>(null);
 
+async function fetchProfile(uid: string): Promise<StaffProfile | null> {
+  const { data, error } = await supabase
+    .from('staff')
+    .select('id, name, role, institution_id, branch_id, counter_id')
+    .eq('id', uid)
+    .maybeSingle();
+  if (error || !data) return null;
+  return {
+    uid: data.id,
+    name: data.name,
+    role: data.role,
+    institutionId: data.institution_id,
+    branchId: data.branch_id,
+    counterId: data.counter_id ?? undefined,
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<StaffProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    return onAuthStateChanged(auth, async (u) => {
+    let active = true;
+
+    async function applySession(u: User | null) {
       setUser(u);
       if (u) {
-        try {
-          const snap = await getDoc(doc(db, 'staff', u.uid));
-          setProfile(snap.exists() ? ({ uid: u.uid, ...snap.data() } as StaffProfile) : null);
-        } catch (err) {
-          console.error('Falha ao ler perfil de staff:', err);
-          setProfile(null);
-        }
-      } else {
+        const p = await fetchProfile(u.id);
+        if (active) setProfile(p);
+      } else if (active) {
         setProfile(null);
       }
-      setLoading(false);
+      if (active) setLoading(false);
+    }
+
+    supabase.auth.getSession().then(({ data }) => applySession(data.session?.user ?? null));
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      applySession(session?.user ?? null);
     });
+
+    return () => {
+      active = false;
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
   async function login(email: string, password: string) {
-    const cred = await signInWithEmailAndPassword(auth, email, password);
-    const snap = await getDoc(doc(db, 'staff', cred.user.uid));
-    if (!snap.exists()) {
-      await signOut(auth);
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error || !data.user) throw error ?? new Error('login-failed');
+    const p = await fetchProfile(data.user.id);
+    if (!p) {
+      await supabase.auth.signOut();
       throw new Error('no-staff-profile');
     }
   }
 
   async function logout() {
-    await signOut(auth);
+    await supabase.auth.signOut();
   }
 
   return (

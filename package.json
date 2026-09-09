@@ -5,17 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:emulator": "vite --mode emulator",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview",
-    "emulators": "firebase emulators:start --only auth,firestore",
-    "seed": "cross-env FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 node scripts/seed.mjs",
-    "seed:prod": "node scripts/seed-prod.mjs",
-    "deploy:rules": "firebase deploy --only firestore:rules --project filacerta-d74f0"
+    "preview": "vite preview"
   },
   "dependencies": {
-    "firebase": "^12.18.0",
+    "@sentry/react": "^10.73.0",
+    "@supabase/supabase-js": "^2.115.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.2"
@@ -25,7 +21,6 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.4",
-    "cross-env": "^10.1.0",
     "firebase-admin": "^14.3.0",
     "oxlint": "^1.75.0",
     "typescript": "~6.0.2",
