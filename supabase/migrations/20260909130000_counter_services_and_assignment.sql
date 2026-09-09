@@ -153,6 +153,9 @@ grant execute on function public.assign_counter_agent(text, text, text, uuid) to
 -- desta view, não da tabela directamente).
 -- ---------------------------------------------------------------------
 
+-- `create or replace view` só permite ACRESCENTAR colunas no fim da
+-- lista -- `services` tem de vir depois de `current_agent_name`
+-- (a posição das colunas já existentes não pode mudar).
 create or replace view public.counters_with_agent as
 select
   c.institution_id,
@@ -162,8 +165,8 @@ select
   c.status,
   c.current_ticket_id,
   c.current_agent_id,
-  c.services,
-  s.name as current_agent_name
+  s.name as current_agent_name,
+  c.services
 from counters c
 left join staff s on s.id = c.current_agent_id;
 
