@@ -104,10 +104,10 @@ jobs:
           deno-version: v2.x
 
       - name: Type-check
-        run: deno check supabase/functions/whatsapp-webhook/index.ts supabase/functions/whatsapp-notifier/index.ts
+        run: deno check --config supabase/functions/deno.json supabase/functions/whatsapp-webhook/index.ts supabase/functions/whatsapp-notifier/index.ts
 
       - name: Testes unitários (assinatura Meta + parsing -- sem credenciais reais)
-        run: deno test --allow-env supabase/functions/
+        run: deno test --config supabase/functions/deno.json --allow-env supabase/functions/
 
   supabase-tests:
     name: Testes Supabase (RPC/RLS/Realtime/concorrência) — ambiente local efémero
