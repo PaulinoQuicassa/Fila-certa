@@ -1,11 +1,11 @@
-export type StaffRole = 'agent' | 'manager';
+export type StaffRole = 'agent' | 'manager' | 'director';
 
 export interface StaffProfile {
   uid: string;
   name: string;
   role: StaffRole;
   institutionId: string;
-  branchId: string;
+  branchId: string | null; // null só para director -- vê a instituição toda, não uma filial
   counterId?: string; // só para agentes
 }
 
@@ -29,6 +29,45 @@ export interface Ticket {
   customerOnTheWay: boolean; // o cliente avisou que está a caminho
   customerArrivedAt: number | null; // o cliente confirmou que já chegou ao local
   customerDelayReportedAt: number | null; // o cliente avisou que vai demorar mais um pouco
+}
+
+export type DirectorPeriod = 'hoje' | '7d' | '30d';
+
+export interface DirectorKpis {
+  avgWaitMinutes: number | null;
+  avgWaitTrendPct: number | null;
+  avgSatisfaction: number | null;
+  avgSatisfactionTrendPct: number | null;
+  abandonmentPct: number | null;
+  abandonmentTrendPct: number | null;
+  completedCount: number;
+  completedTrendPct: number | null;
+}
+
+export interface DirectorTrendPoint {
+  label: string;
+  avgWaitMinutes: number | null;
+}
+
+export interface DirectorBenchmarkRow {
+  branchId: string;
+  branchName: string;
+  avgWaitMinutes: number | null;
+  avgSatisfaction: number | null;
+  abandonmentPct: number;
+  score: number;
+}
+
+export type AlertSeverity = 'critico' | 'atencao' | 'info';
+
+export interface DirectorAlert {
+  branchId: string;
+  branchName: string;
+  severity: AlertSeverity;
+  title: string;
+  causa: string;
+  previsao: string;
+  recomendacao: string;
 }
 
 export type CounterStatus = 'available' | 'serving' | 'paused';

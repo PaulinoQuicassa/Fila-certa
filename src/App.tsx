@@ -4,16 +4,24 @@ import { AuthProvider, useAuth } from './auth/AuthContext';
 import { Login } from './pages/Login';
 import { AgentScreen } from './pages/AgentScreen';
 import { Dashboard } from './pages/Dashboard';
+import { DirectorScreen } from './pages/DirectorScreen';
 import { PublicDisplay } from './pages/PublicDisplay';
 import { Estacao } from './pages/Estacao';
+import type { StaffRole } from './types';
 
-function RequireRole({ role, children }: { role: 'agent' | 'manager'; children: React.ReactNode }) {
+function homeRouteFor(role: StaffRole) {
+  if (role === 'manager') return '/dashboard';
+  if (role === 'director') return '/direcao';
+  return '/agente';
+}
+
+function RequireRole({ role, children }: { role: StaffRole; children: React.ReactNode }) {
   const { user, profile, loading } = useAuth();
 
   if (loading) return null;
   if (!user || !profile) return <Navigate to="/login" replace />;
   if (profile.role !== role) {
-    return <Navigate to={profile.role === 'manager' ? '/dashboard' : '/agente'} replace />;
+    return <Navigate to={homeRouteFor(profile.role)} replace />;
   }
   return <>{children}</>;
 }
@@ -22,7 +30,7 @@ function LoginRoute() {
   const { user, profile, loading } = useAuth();
   if (loading) return null;
   if (user && profile) {
-    return <Navigate to={profile.role === 'manager' ? '/dashboard' : '/agente'} replace />;
+    return <Navigate to={homeRouteFor(profile.role)} replace />;
   }
   return <Login />;
 }
@@ -74,6 +82,14 @@ export default function App() {
               element={
                 <RequireRole role="manager">
                   <Dashboard />
+                </RequireRole>
+              }
+            />
+            <Route
+              path="/direcao"
+              element={
+                <RequireRole role="director">
+                  <DirectorScreen />
                 </RequireRole>
               }
             />

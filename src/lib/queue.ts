@@ -1,5 +1,17 @@
 import { supabase } from '../supabase';
-import type { Appointment, Counter, LiveBoard, Rating, StaffMember, Ticket } from '../types';
+import type {
+  Appointment,
+  Counter,
+  DirectorAlert,
+  DirectorBenchmarkRow,
+  DirectorKpis,
+  DirectorPeriod,
+  DirectorTrendPoint,
+  LiveBoard,
+  Rating,
+  StaffMember,
+  Ticket,
+} from '../types';
 
 function toMillis(value: string | null | undefined): number | null {
   return value ? new Date(value).getTime() : null;
@@ -459,4 +471,63 @@ export async function assignCounterAgent(
     p_counter_id: counterId,
     p_agent_id: agentId,
   });
+}
+
+// --- Painel de Inteligência (Direcção Geral) ---------------------------------
+// KPIs/tendência/benchmarking são cálculos reais (RPCs director_* no
+// servidor); os alertas são regras simples sobre dados reais, não um
+// motor de previsão -- ver comentário no topo da migração 20260910100100.
+
+type DirectorKpisRow = {
+  avg_wait_minutes: number | null; avg_wait_trend_pct: number | null;
+  avg_satisfaction: number | null; avg_satisfaction_trend_pct: number | null;
+  abandonment_pct: number | null; abandonment_trend_pct: number | null;
+  completed_count: number; completed_trend_pct: number | null;
+};
+
+export async function fetchDirectorKpis(institutionId: string, period: DirectorPeriod): Promise<DirectorKpis> {
+  const row = await rpc<DirectorKpisRow>('director_kpis', { p_institution_id: institutionId, p_period: period });
+  return {
+    avgWaitMinutes: row.avg_wait_minutes,
+    avgWaitTrendPct: row.avg_wait_trend_pct,
+    avgSatisfaction: row.avg_satisfaction,
+    avgSatisfactionTrendPct: row.avg_satisfaction_trend_pct,
+    abandonmentPct: row.abandonment_pct,
+    abandonmentTrendPct: row.abandonment_trend_pct,
+    completedCount: row.completed_count,
+    completedTrendPct: row.completed_trend_pct,
+  };
+}
+
+type DirectorTrendRow = { bucket_label: string; avg_wait_minutes: number | null };
+
+export async function fetchDirectorTrend(institutionId: string, period: DirectorPeriod): Promise<DirectorTrendPoint[]> {
+  const rows = await rpc<DirectorTrendRow[]>('director_trend', { p_institution_id: institutionId, p_period: period });
+  return rows.map((r) => ({ label: r.bucket_label, avgWaitMinutes: r.avg_wait_minutes }));
+}
+
+type DirectorBenchmarkRowRaw = {
+  branch_id: string; branch_name: string; avg_wait_minutes: number | null;
+  avg_satisfaction: number | null; abandonment_pct: number; score: number;
+};
+
+export async function fetchDirectorBenchmarking(institutionId: string, period: DirectorPeriod): Promise<DirectorBenchmarkRow[]> {
+  const rows = await rpc<DirectorBenchmarkRowRaw[]>('director_benchmarking', { p_institution_id: institutionId, p_period: period });
+  return rows.map((r) => ({
+    branchId: r.branch_id, branchName: r.branch_name, avgWaitMinutes: r.avg_wait_minutes,
+    avgSatisfaction: r.avg_satisfaction, abandonmentPct: r.abandonment_pct, score: r.score,
+  }));
+}
+
+type DirectorAlertRow = {
+  branch_id: string; branch_name: string; severity: string; title: string;
+  causa: string; previsao: string; recomendacao: string;
+};
+
+export async function fetchDirectorAlerts(institutionId: string, period: DirectorPeriod): Promise<DirectorAlert[]> {
+  const rows = await rpc<DirectorAlertRow[]>('director_alerts', { p_institution_id: institutionId, p_period: period });
+  return rows.map((r) => ({
+    branchId: r.branch_id, branchName: r.branch_name, severity: r.severity as DirectorAlert['severity'],
+    title: r.title, causa: r.causa, previsao: r.previsao, recomendacao: r.recomendacao,
+  }));
 }
