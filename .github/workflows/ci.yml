@@ -93,6 +93,22 @@ jobs:
       - name: Dependências vulneráveis (falha só em alto/crítico)
         run: npm audit --audit-level=high || echo "::warning::npm audit encontrou avisos -- ver log acima (não bloqueante abaixo de 'high')."
 
+  whatsapp-functions:
+    name: Canal WhatsApp (Edge Functions) — testes Deno
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check
+        run: deno check supabase/functions/whatsapp-webhook/index.ts supabase/functions/whatsapp-notifier/index.ts
+
+      - name: Testes unitários (assinatura Meta + parsing -- sem credenciais reais)
+        run: deno test --allow-env supabase/functions/
+
   supabase-tests:
     name: Testes Supabase (RPC/RLS/Realtime/concorrência) — ambiente local efémero
     runs-on: ubuntu-latest
@@ -145,7 +161,7 @@ jobs:
 
   deploy:
     name: Deploy (GitHub Pages) + Smoke Test
-    needs: [quality, supabase-tests]
+    needs: [quality, supabase-tests, whatsapp-functions]
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     steps:
