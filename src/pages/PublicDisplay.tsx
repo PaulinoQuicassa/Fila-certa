@@ -72,7 +72,9 @@ export function PublicDisplay() {
   }
 
   useEffect(() => {
-    ensureAnonymousSession().finally(() => setReady(true));
+    ensureAnonymousSession()
+      .catch((err) => console.error('falha ao iniciar sessão anónima do painel público', err))
+      .finally(() => setReady(true));
   }, []);
 
   useEffect(() => {

@@ -59,6 +59,20 @@ export function AgentScreen() {
 
   if (!profile) return null;
 
+  if (!counterId) {
+    return (
+      <div style={{ minHeight: '100vh', padding: 32, display: 'flex', flexDirection: 'column', gap: 24, alignItems: 'center', justifyContent: 'center' }}>
+        <div className="fc-card" style={{ padding: 32, maxWidth: 420, textAlign: 'center' }}>
+          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Sem balcão atribuído</div>
+          <div style={{ fontSize: 13.5, color: 'var(--fc-text-secondary)', marginBottom: 20 }}>
+            O seu gestor ainda não o atribuiu a nenhum balcão. Fale com o gestor da filial em "Gerir Balcões" para poder atender.
+          </div>
+          <button onClick={() => logout()} className="fc-btn fc-btn--secondary">Terminar sessão</button>
+        </div>
+      </div>
+    );
+  }
+
   const waitMin = minutesAgo(currentTicket?.createdAt ?? null);
   const isPaused = counter?.status === 'paused';
 
@@ -77,7 +91,9 @@ export function AgentScreen() {
     .sort((a, b) => {
       const aMine = a.transferredToCounterId === counterId ? 0 : 1;
       const bMine = b.transferredToCounterId === counterId ? 0 : 1;
-      return aMine !== bMine ? aMine - bMine : a.createdAt - b.createdAt;
+      if (aMine !== bMine) return aMine - bMine;
+      if (a.priority !== b.priority) return a.priority ? -1 : 1;
+      return a.createdAt - b.createdAt;
     });
   const otherCounters = counters.filter((c) => c.id !== counterId);
 
