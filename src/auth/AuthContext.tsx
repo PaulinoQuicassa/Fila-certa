@@ -49,7 +49,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (active) setLoading(false);
     }
 
-    supabase.auth.getSession().then(({ data }) => applySession(data.session?.user ?? null));
+    supabase.auth.getSession()
+      .then(({ data }) => applySession(data.session?.user ?? null))
+      .catch(() => {
+        if (active) setLoading(false);
+      });
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       applySession(session?.user ?? null);

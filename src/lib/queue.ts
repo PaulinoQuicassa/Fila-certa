@@ -1,4 +1,5 @@
 import { supabase } from '../supabase';
+import { reportError } from '../sentry';
 import type {
   Appointment,
   Counter,
@@ -15,6 +16,17 @@ import type {
 
 function toMillis(value: string | null | undefined): number | null {
   return value ? new Date(value).getTime() : null;
+}
+
+/** Reporta um erro de leitura em vez de o engolir em silêncio -- uma
+ * falha aqui (RLS, rede) não pode parecer "ainda sem dados" ao agente/
+ * gestor. Não interrompe o fluxo: quem chama continua a receber o
+ * último estado conhecido via `onChange`, só o diagnóstico é que fica
+ * visível (consola + Sentry) em vez de desaparecer. */
+function logQueryError(context: string, error: { message: string } | null) {
+  if (!error) return;
+  console.error(`[queue] ${context}:`, error.message);
+  reportError(new Error(error.message), { context });
 }
 
 type TicketRow = {
@@ -94,13 +106,14 @@ export function subscribeWaitingQueue(
   onChange: (tickets: Ticket[]) => void,
 ) {
   async function refetch() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('tickets')
       .select(TICKET_COLUMNS)
       .eq('institution_id', institutionId)
       .eq('branch_id', branchId)
       .eq('status', 'waiting')
       .order('created_at', { ascending: true });
+    logQueryError('subscribeWaitingQueue', error);
     onChange((data ?? []).map(ticketFromRow));
   }
   return watchTable('tickets', branchId, refetch);
@@ -113,13 +126,14 @@ export function subscribeTicket(
   onChange: (ticket: Ticket | null) => void,
 ) {
   async function refetch() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('tickets')
       .select(TICKET_COLUMNS)
       .eq('institution_id', institutionId)
       .eq('branch_id', branchId)
       .eq('id', ticketId)
       .maybeSingle();
+    logQueryError('subscribeTicket', error);
     onChange(data ? ticketFromRow(data) : null);
   }
   const channel = supabase
@@ -151,13 +165,14 @@ export function subscribeCounter(
   onChange: (counter: Counter | null) => void,
 ) {
   async function refetch() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('counters_with_agent')
       .select(COUNTER_COLUMNS)
       .eq('institution_id', institutionId)
       .eq('branch_id', branchId)
       .eq('id', counterId)
       .maybeSingle();
+    logQueryError('subscribeCounter', error);
     onChange(data ? counterFromRow(data) : null);
   }
   return watchTable('counters', branchId, refetch);
@@ -180,12 +195,13 @@ export function subscribeCounters(
   onChange: (counters: Counter[]) => void,
 ) {
   async function refetch() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('counters_with_agent')
       .select(COUNTER_COLUMNS)
       .eq('institution_id', institutionId)
       .eq('branch_id', branchId)
       .order('label', { ascending: true });
+    logQueryError('subscribeCounters', error);
     onChange((data ?? []).map(counterFromRow));
   }
   return watchTable('counters', branchId, refetch);
@@ -197,13 +213,14 @@ export function subscribeLiveBoard(
   onChange: (board: LiveBoard) => void,
 ) {
   async function refetch() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('ticket_calls')
       .select('code, counter_label, called_at')
       .eq('institution_id', institutionId)
       .eq('branch_id', branchId)
       .order('called_at', { ascending: false })
       .limit(5);
+    logQueryError('subscribeLiveBoard', error);
     const rows = data ?? [];
     if (rows.length === 0) {
       onChange({ current: null, history: [], updatedAt: null });
@@ -229,12 +246,13 @@ export function subscribeTicketsToday(
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
   async function refetch() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('tickets')
       .select(TICKET_COLUMNS)
       .eq('institution_id', institutionId)
       .eq('branch_id', branchId)
       .gte('created_at', startOfDay.toISOString());
+    logQueryError('subscribeTicketsToday', error);
     onChange((data ?? []).map(ticketFromRow));
   }
   return watchTable('tickets', branchId, refetch);
@@ -272,12 +290,13 @@ export function subscribeAppointmentsToday(
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
   async function refetch() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('appointments')
       .select('id, customer_id, service, date, time, created_at, status')
       .eq('institution_id', institutionId)
       .eq('branch_id', branchId)
       .gte('created_at', startOfDay.toISOString());
+    logQueryError('subscribeAppointmentsToday', error);
     onChange((data ?? []).map(appointmentFromRow));
   }
   return watchTable('appointments', branchId, refetch);
@@ -325,7 +344,7 @@ export function subscribeRatingsToday(
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
   async function refetch() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('ratings')
       .select(
         'id, customer_id, service, overall, recommend, comment, aspect_atendimento, aspect_tempo_espera, aspect_organizacao, aspect_instalacoes, created_at',
@@ -333,6 +352,7 @@ export function subscribeRatingsToday(
       .eq('institution_id', institutionId)
       .eq('branch_id', branchId)
       .gte('created_at', startOfDay.toISOString());
+    logQueryError('subscribeRatingsToday', error);
     onChange((data ?? []).map(ratingFromRow));
   }
   return watchTable('ratings', branchId, refetch);
@@ -352,10 +372,11 @@ export function subscribeBranchWaitStats(
 ) {
   let cancelled = false;
   async function refetch() {
-    const { data } = await supabase.rpc('branch_wait_stats', {
+    const { data, error } = await supabase.rpc('branch_wait_stats', {
       p_institution_id: institutionId,
       p_branch_id: branchId,
     });
+    logQueryError('subscribeBranchWaitStats', error);
     if (!cancelled) onChange(data === null || data === undefined ? null : Number(data));
   }
   refetch();
