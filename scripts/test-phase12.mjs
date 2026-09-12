@@ -1,9 +1,8 @@
 // Fase 12 (docs/migration-plan.md): dois cenários da secção de testes
 // ainda não cobertos pelas Fases 9/10 -- concorrência (secção 21 do
 // mandato) e isolamento entre instituições (RBAC/RLS por papel).
-const BASE_URL = process.env.SUPABASE_URL ?? 'https://qdfpqispcntitvczybfl.supabase.co';
-const ANON_KEY = process.env.SUPABASE_ANON_KEY ?? 'sb_publishable_HLelr-FOPvSL9a5w8_feUw_FfKIrOoQ';
-const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+import { SUPABASE_URL as BASE_URL, SUPABASE_ANON_KEY as ANON_KEY, SUPABASE_SERVICE_ROLE_KEY as SERVICE_ROLE_KEY, TEST_STAFF_PASSWORD } from './lib/test-env.mjs';
+
 const AUTH_BASE = `${BASE_URL}/auth/v1`;
 const REST_BASE = `${BASE_URL}/rest/v1`;
 
@@ -46,7 +45,7 @@ async function main() {
   // --- Cenário 1: concorrência -- dois balcões do mesmo branch a chamar
   // call_next ao mesmo tempo nunca podem ficar com a mesma senha.
   console.log('\n1. Concorrência: guiche-1 e guiche-2 do SIAC chamam em simultâneo');
-  const agentSiac = await signIn('agente@siac.test', 'teste123');
+  const agentSiac = await signIn('agente@siac.test', TEST_STAFF_PASSWORD);
   const t1 = (await rpc(customerSession.access_token, 'pull_ticket', { p_institution_id: 'siac', p_branch_id: 'balcao-talatona', p_service: 'Registo Civil' })).body;
   const t2 = (await rpc(customerSession.access_token, 'pull_ticket', { p_institution_id: 'siac', p_branch_id: 'balcao-talatona', p_service: 'NIF — AGT' })).body;
   const [call1, call2] = await Promise.all([

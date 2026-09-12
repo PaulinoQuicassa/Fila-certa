@@ -4,9 +4,8 @@
 // appointments (next_appointment_code + schedule_appointment + cancel),
 // exactamente com os mesmos nomes de coluna que lib/ticket_service.dart e
 // lib/app_stores.dart agora usam.
-const BASE_URL = process.env.SUPABASE_URL ?? 'https://qdfpqispcntitvczybfl.supabase.co';
-const ANON_KEY = process.env.SUPABASE_ANON_KEY ?? 'sb_publishable_HLelr-FOPvSL9a5w8_feUw_FfKIrOoQ';
-const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+import { SUPABASE_URL as BASE_URL, SUPABASE_ANON_KEY as ANON_KEY, SUPABASE_SERVICE_ROLE_KEY as SERVICE_ROLE_KEY, TEST_STAFF_PASSWORD } from './lib/test-env.mjs';
+
 const AUTH_BASE = `${BASE_URL}/auth/v1`;
 const REST_BASE = `${BASE_URL}/rest/v1`;
 
@@ -54,7 +53,7 @@ async function main() {
   const customerId = await createTestCustomer(email, 'senha123456');
   const session = await signIn(email, 'senha123456');
   const token = session.access_token;
-  const agentSession = await signIn('agente@siac.test', 'teste123');
+  const agentSession = await signIn('agente@siac.test', TEST_STAFF_PASSWORD);
 
   console.log('\n1. user_settings: upsert (ensureSettingsRow) + update (toggle)');
   // upsert real via Prefer resolution=merge-duplicates, simulando supabase.upsert do Dart:

@@ -5,10 +5,7 @@
 // canais postgres_changes, exactamente como queue.ts/ticket_service.dart
 // fazem hoje.
 import { createClient } from '@supabase/supabase-js';
-
-const URL = process.env.SUPABASE_URL ?? 'https://qdfpqispcntitvczybfl.supabase.co';
-const ANON_KEY = process.env.SUPABASE_ANON_KEY ?? 'sb_publishable_HLelr-FOPvSL9a5w8_feUw_FfKIrOoQ';
-const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+import { SUPABASE_URL as URL, SUPABASE_ANON_KEY as ANON_KEY, SUPABASE_SERVICE_ROLE_KEY as SERVICE_ROLE_KEY, TEST_STAFF_PASSWORD } from './lib/test-env.mjs';
 
 let failures = 0;
 const ok = (l) => console.log(`  OK  ${l}`);
@@ -67,8 +64,8 @@ async function main() {
   const agent = client();
   const manager = client();
   await customer.auth.signInWithPassword({ email, password: 'senha123456' });
-  await agent.auth.signInWithPassword({ email: 'agente@siac.test', password: 'teste123' });
-  await manager.auth.signInWithPassword({ email: 'gestor@siac.test', password: 'teste123' });
+  await agent.auth.signInWithPassword({ email: 'agente@siac.test', password: TEST_STAFF_PASSWORD });
+  await manager.auth.signInWithPassword({ email: 'gestor@siac.test', password: TEST_STAFF_PASSWORD });
 
   // --- Cenário: cliente A entra na fila -> atendente recebe a nova senha em tempo real
   console.log('\n1. Atendente recebe INSERT em tickets (SIAC, balcao-talatona) via Realtime quando o cliente tira uma senha');

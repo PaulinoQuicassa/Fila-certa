@@ -67,8 +67,21 @@ jobs:
             echo "::error::Possível service_role key ou segredo no código frontend."
             exit 1
           fi
-          if git grep -nE "BEGIN (RSA )?PRIVATE KEY" -- '*.ts' '*.tsx' '*.json' ':!package-lock.json'; then
+          if git grep -nE "BEGIN (RSA )?PRIVATE KEY" -- '*.ts' '*.tsx' '*.mjs' '*.json' ':!package-lock.json'; then
             echo "::error::Possível chave privada commitada."
+            exit 1
+          fi
+          # Reforçado depois da auditoria de 2026-09-12 (achado Crítico:
+          # password de staff partilhada commitada) -- ver
+          # docs/security-credentials.md. Nunca mais esta password
+          # específica em lado nenhum, e nenhum script pode ter um valor
+          # por omissão que caia para a URL/chave reais de produção.
+          if git grep -n "teste123" -- ':!.github/workflows/ci.yml'; then
+            echo "::error::Password comprometida encontrada -- nunca deve voltar a constar de nenhum ficheiro (ver docs/security-credentials.md)."
+            exit 1
+          fi
+          if git grep -nE "SUPABASE_URL\s*(\?\?|\|\|)\s*['\"]https://qdfpqispcntitvczybfl" -- scripts/; then
+            echo "::error::Script com fallback para a URL de produção -- nunca deve haver valor por omissão (ver scripts/lib/test-env.mjs)."
             exit 1
           fi
           echo "OK: nenhum segredo encontrado."
@@ -136,6 +149,11 @@ jobs:
           echo "SUPABASE_URL=$(jq -r '.API_URL' /tmp/supabase-status.json)" >> "$GITHUB_ENV"
           echo "SUPABASE_ANON_KEY=$(jq -r '.ANON_KEY' /tmp/supabase-status.json)" >> "$GITHUB_ENV"
           echo "SUPABASE_SERVICE_ROLE_KEY=$(jq -r '.SERVICE_ROLE_KEY' /tmp/supabase-status.json)" >> "$GITHUB_ENV"
+          # Só para as contas de staff/cliente deste ambiente local
+          # efémero (destruído no fim do job) -- nunca a mesma password
+          # em dois ambientes, e nunca hardcoded (ver
+          # docs/security-credentials.md, scripts/lib/test-env.mjs).
+          echo "TEST_STAFF_PASSWORD=$(openssl rand -hex 16)" >> "$GITHUB_ENV"
 
       - name: Seed dos dados de referência (instituições/filiais/balcões/staff)
         run: node scripts/seed-reference-data.mjs
@@ -178,6 +196,13 @@ jobs:
         env:
           VITE_SUPABASE_URL: https://qdfpqispcntitvczybfl.supabase.co
           VITE_SUPABASE_ANON_KEY: sb_publishable_HLelr-FOPvSL9a5w8_feUw_FfKIrOoQ
+          # Sem valor por omissão de propósito (ver docs/security-
+          # credentials.md e src/supabase.ts) -- se estes dois secrets
+          # do repo não estiverem configurados, o build continua a
+          # passar, só /estacao fica por configurar até lá (falha com
+          # mensagem clara, não com uma password adivinhável).
+          VITE_STATION_EMAIL: ${{ secrets.VITE_STATION_EMAIL }}
+          VITE_STATION_PASSWORD: ${{ secrets.VITE_STATION_PASSWORD }}
         run: npx tsc -b && npx vite build --base=/Fila-certa/
 
       - name: Confirmar que o URL do Supabase ficou embutido no bundle

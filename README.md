@@ -52,10 +52,16 @@ npm install
 npm run dev      # Vite, já ligado ao projecto Supabase real (ver .env.local)
 ```
 
-Contas de staff de teste (password `teste123` para todas):
+Contas de staff de teste:
 - `agente@filacerta.test` / `gestor@filacerta.test` → Banco Exemplo
 - `agente@bpc.test` / `gestor@bpc.test`, e equivalentes para `bfa`/`bai`/`bci`/`siac`
 - `/painel` → ecrã público, sem login (sessão anónima do Supabase)
+
+A password destas contas **não está neste repositório** (ver
+`docs/security-credentials.md` -- corrigido depois de uma auditoria de
+segurança encontrar a password antiga hardcoded e commitada). Peça-a a
+quem gere o projecto, ou defina `TEST_STAFF_PASSWORD` você mesmo se for
+correr `scripts/rotate-staff-passwords.mjs`.
 
 Não há emulador local — o desenvolvimento corre sempre contra o projecto
 Supabase real (`qdfpqispcntitvczybfl`), com contas/dados de teste
