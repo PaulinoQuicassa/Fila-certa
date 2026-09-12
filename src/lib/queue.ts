@@ -389,7 +389,15 @@ export function subscribeBranchWaitStats(
 
 async function rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.rpc(fn, args);
-  if (error) throw new Error(error.message);
+  if (error) {
+    // Erros de RPC (fila, balcões, dashboard) não chegavam ao Sentry
+    // antes -- só as leituras via `logQueryError` (Fase 16: "monitorizar
+    // RPCs críticas"). `args` nunca contém segredos (são sempre IDs de
+    // instituição/filial/balcão/agente), mas passa pela redacção de
+    // `sentry.ts` na mesma, por segurança.
+    reportError(new Error(error.message), { rpc: fn, args });
+    throw new Error(error.message);
+  }
   return data as T;
 }
 

@@ -95,6 +95,7 @@ frontend/Git):
 TWILIO_ACCOUNT_SID=...
 TWILIO_AUTH_TOKEN=...
 TWILIO_MESSAGING_SERVICE_SID=...   # ou TWILIO_SMS_FROM=+1... (um número só)
+TWILIO_STATUS_CALLBACK_URL=...     # ver secção 8.1 -- URL pública desta mesma Edge Function (twilio-status-callback)
 ```
 
 ## 4. Twilio WhatsApp (Fase 10) — a par do Meta, não substituindo
@@ -122,6 +123,7 @@ TWILIO_AUTH_TOKEN=...
 TWILIO_WHATSAPP_FROM=whatsapp:+1...             # Sender aprovado no Twilio WhatsApp Business Platform
 TWILIO_WHATSAPP_TEMPLATE_QUEUE_CALLED=HX...     # Content SID do template "queue_called" aprovado
 TWILIO_WHATSAPP_TEMPLATE_QUEUE_NEAR_TURN=HX...  # Content SID do template "queue_near_turn" aprovado
+TWILIO_STATUS_CALLBACK_URL=...                  # ver secção 8.1
 ```
 
 Cada `templateKey` lógico usado pelo motor (`QUEUE_CALLED`,
@@ -184,16 +186,45 @@ observabilidade e diagnóstico. RLS activa, sem nenhuma policy (só
 não existe hoje nenhum ecrã de cliente que precise de ler isto
 directamente.
 
+### 8.1 Callback de estado da Twilio (`twilio-status-callback`)
+
+Edge Function nova (`supabase/functions/twilio-status-callback/`) que
+recebe os callbacks assíncronos de entrega da Twilio (SMS e WhatsApp)
+e actualiza `notification_deliveries` com o estado real
+(`delivered`/`read`/`failed`) — antes disto, o estado gravado ficava
+parado em `sent` para sempre (o que a API aceitou no pedido inicial),
+nunca confirmando se a mensagem chegou de facto (Fase 10: "nunca
+considerar mensagem enviada apenas porque a API aceitou o request").
+
+- Assinatura verificada (`_shared/twilioSignature.ts`, HMAC-SHA1 sobre
+  a URL configurada + parâmetros do formulário, mesmo algoritmo
+  documentado pela Twilio) antes de processar seja o que for.
+- Idempotente por construção: procura a linha por
+  `provider_message_id` (o `MessageSid` da Twilio) e nunca sobrepõe um
+  estado já terminal (`delivered`/`read`/`failed`) — um callback
+  repetido ou fora de ordem não altera duas vezes o estado (Fase 20).
+- `twilioSmsProvider.ts`/`twilioWhatsAppProvider.ts` já enviam
+  `StatusCallback=<TWILIO_STATUS_CALLBACK_URL>` em cada pedido — não é
+  preciso configurar nada na consola da Twilio para além do secret.
+
+**Pendente de configuração externa**: `TWILIO_STATUS_CALLBACK_URL` tem
+de ser a URL pública real desta função depois de publicada (`supabase
+functions deploy twilio-status-callback`), tipicamente
+`https://<projecto>.supabase.co/functions/v1/twilio-status-callback` —
+sem isto definido, os envios continuam a funcionar, só ficam parados em
+`sent` (nunca chegam a `delivered`).
+
 ## 9. O que fica para uma iteração seguinte (não implementado agora)
 
-- Um **worker de retry** que releia `notifications_pending_idx` e
-  tente de novo os `failed` com backoff — hoje o retry_count incrementa
-  a cada falha, mas nada volta a tentar automaticamente ainda.
-- **Callbacks de estado assíncronos** (`status callback` da Twilio,
-  webhook de `statuses` da Meta) a escrever em
-  `update_notification_status` — hoje o estado gravado é só o da
-  resposta síncrona ao enviar (`sent`/`failed`); `delivered`/`read`
-  ficam por wire-up de um endpoint novo que receba esses callbacks.
+- Um **worker de retry** que releia `notification_deliveries_pending_idx`
+  e tente de novo os `failed` com backoff — hoje o retry_count
+  incrementa a cada falha, mas nada volta a tentar automaticamente
+  ainda.
+- **Callback de estado da Meta** (webhook de `statuses`, distinto do
+  `twilio-status-callback` da secção 8.1) — a Meta Cloud API só chega
+  ao `whatsapp-webhook` existente; hoje não actualiza
+  `notification_deliveries` (o `metaWhatsAppProvider.getDeliveryStatus`
+  devolve sempre `sent`, ver comentário no próprio ficheiro).
 - Um canal `low` (avisos informativos gerais) — não existe nenhum
   evento desse tipo ainda no produto.
 
