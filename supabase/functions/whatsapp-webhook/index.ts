@@ -3,6 +3,7 @@
 // de fila vive aqui (ver docs/whatsapp-channel.md).
 import { claimInboundMessage } from "../_shared/messageLog.ts";
 import { verifyMetaSignature } from "../_shared/meta.ts";
+import { captureException } from "../_shared/sentry.ts";
 import { handleIncomingMessage } from "./flows.ts";
 import { parseIncoming } from "./parseIncoming.ts";
 
@@ -58,7 +59,9 @@ Deno.serve(async (req: Request) => {
     console.error("Erro a processar mensagem do WhatsApp:", err);
     // Responde 200 mesmo assim -- devolver erro faz a Meta reentregar
     // repetidamente a mesma mensagem, o que não resolve um erro do
-    // nosso lado. O erro fica no log da função para investigação.
+    // nosso lado. O erro fica no log da função e no Sentry para
+    // investigação (Fase 16: "monitorizar webhooks").
+    await captureException(err, { functionName: "whatsapp-webhook", tags: { messageType: message.text ? "text" : "interactive" } });
   }
 
   return new Response("OK", { status: 200 });

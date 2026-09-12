@@ -7,6 +7,7 @@
 import { serviceClient } from "../_shared/citizenSession.ts";
 import { logEvent } from "../_shared/messageLog.ts";
 import { sendNotification } from "../_shared/notifications/engine.ts";
+import { captureException } from "../_shared/sentry.ts";
 
 const NEAR_TURN_THRESHOLD = 2; // 2 senhas à frente = 3ª posição
 
@@ -112,6 +113,10 @@ Deno.serve(async (req: Request) => {
     }
   } catch (err) {
     console.error("Erro no whatsapp-notifier:", err);
+    await captureException(err, {
+      functionName: "whatsapp-notifier",
+      tags: { institutionId: payload.record.institution_id, branchId: payload.record.branch_id },
+    });
   }
 
   return new Response("OK", { status: 200 });

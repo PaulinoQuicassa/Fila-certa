@@ -6,6 +6,7 @@
 // é garantida na base de dados (`record_notification_attempt`, coluna
 // `event_id` unique), não só aqui em memória.
 import { serviceClient } from "../citizenSession.ts";
+import { captureException } from "../sentry.ts";
 import { sendSms, sendWhatsAppTemplate } from "./providerRouter.ts";
 import type { NotificationChannel, NotificationPriority } from "./types.ts";
 
@@ -85,6 +86,15 @@ export async function sendNotification(input: SendNotificationInput): Promise<Se
     });
 
     if (routed.status === "failed") {
+      // Fase 16 (alerta: "aumento de notificações failed") -- cada
+      // falha de fornecedor fica visível no Sentry com o canal e a
+      // prioridade, para uma falha "critical" nunca passar
+      // despercebida no meio de avisos "low".
+      await captureException(new Error(routed.errorMessage ?? "envio falhou sem mensagem de erro"), {
+        functionName: "notification-engine",
+        tags: { channel: input.channel, priority: input.priority, provider: routed.providerName ?? "desconhecido" },
+        extra: { eventId: input.eventId, errorCode: routed.errorCode },
+      });
       return { sent: false, deduplicated: false, providerName: routed.providerName, error: routed.errorMessage };
     }
     return { sent: true, deduplicated: false, providerMessageId: routed.providerMessageId, providerName: routed.providerName };
@@ -94,6 +104,11 @@ export async function sendNotification(input: SendNotificationInput): Promise<Se
     // sucesso silencioso (a linha já existe desde o passo anterior).
     const message = err instanceof Error ? err.message : String(err);
     await db.rpc("update_notification_status", { p_id: notificationId, p_status: "failed", p_error_message: message });
+    await captureException(err, {
+      functionName: "notification-engine",
+      tags: { channel: input.channel, priority: input.priority },
+      extra: { eventId: input.eventId },
+    });
     return { sent: false, deduplicated: false, error: message };
   }
 }

@@ -5,7 +5,8 @@
 // convivem em vez de um substituir o outro, e para a lista de
 // segredos/templates que faltam configurar antes disto poder mandar
 // uma mensagem real.
-import type { DeliveryStatusResult, NotificationStatus, ProviderSendResult, WhatsAppProvider } from "./types.ts";
+import type { DeliveryStatusResult, ProviderSendResult, WhatsAppProvider } from "./types.ts";
+import { mapTwilioStatus } from "./mapTwilioStatus.ts";
 
 const API_BASE = "https://api.twilio.com/2010-04-01";
 
@@ -19,20 +20,6 @@ function authHeader(): string {
   const sid = requiredEnv("TWILIO_ACCOUNT_SID");
   const token = requiredEnv("TWILIO_AUTH_TOKEN");
   return "Basic " + btoa(`${sid}:${token}`);
-}
-
-function mapTwilioStatus(twilioStatus: string): NotificationStatus {
-  switch (twilioStatus) {
-    case "delivered":
-      return "delivered";
-    case "read":
-      return "read";
-    case "failed":
-    case "undelivered":
-      return "failed";
-    default:
-      return "sent";
-  }
 }
 
 /** Regista o SID de conteúdo (Content API) aprovado na Twilio para
@@ -61,6 +48,11 @@ async function sendContentTemplate(to: string, templateKey: string, bodyParams: 
     ContentSid: contentSid,
     ContentVariables: JSON.stringify(variables),
   });
+  // Sem Messaging Service aqui (usa `From` directo) -- sem isto não há
+  // nenhum outro sítio configurável na Twilio para receber o estado
+  // real de entrega (Fase 10: "guardar o estado real").
+  const statusCallback = Deno.env.get("TWILIO_STATUS_CALLBACK_URL");
+  if (statusCallback) params.set("StatusCallback", statusCallback);
 
   const res = await fetch(`${API_BASE}/Accounts/${sid}/Messages.json`, {
     method: "POST",

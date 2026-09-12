@@ -4,7 +4,8 @@
 // Git, no bundle da app ou em localStorage. Ver
 // docs/notifications-architecture.md para a lista exacta de segredos
 // que faltam configurar em produção.
-import type { DeliveryStatusResult, NotificationStatus, ProviderSendResult, SmsProvider } from "./types.ts";
+import type { DeliveryStatusResult, ProviderSendResult, SmsProvider } from "./types.ts";
+import { mapTwilioStatus } from "./mapTwilioStatus.ts";
 
 const API_BASE = "https://api.twilio.com/2010-04-01";
 
@@ -20,29 +21,6 @@ function authHeader(): string {
   return "Basic " + btoa(`${sid}:${token}`);
 }
 
-// Twilio devolve estados próprios (queued/sending/sent/delivered/
-// undelivered/failed/read) -- mapeados para o vocabulário interno do
-// motor de notificações (ver types.ts) para nenhum outro módulo
-// precisar de conhecer o vocabulário de um fornecedor específico.
-function mapTwilioStatus(twilioStatus: string): NotificationStatus {
-  switch (twilioStatus) {
-    case "delivered":
-      return "delivered";
-    case "read":
-      return "read";
-    case "failed":
-    case "undelivered":
-      return "failed";
-    case "sent":
-    case "sending":
-    case "queued":
-    case "accepted":
-      return "sent";
-    default:
-      return "sent";
-  }
-}
-
 async function sendViaTwilio(to: string, body: string): Promise<ProviderSendResult> {
   const sid = requiredEnv("TWILIO_ACCOUNT_SID");
   const from = Deno.env.get("TWILIO_MESSAGING_SERVICE_SID");
@@ -54,6 +32,12 @@ async function sendViaTwilio(to: string, body: string): Promise<ProviderSendResu
   const params = new URLSearchParams({ To: to, Body: body });
   if (from) params.set("MessagingServiceSid", from);
   else params.set("From", fallbackFrom!);
+  // Pedido explícito por mensagem tem prioridade sobre o Status
+  // Callback por omissão do Messaging Service na consola da Twilio --
+  // definir aqui garante que `twilio-status-callback` recebe o estado
+  // real de entrega mesmo que a consola não tenha sido configurada.
+  const statusCallback = Deno.env.get("TWILIO_STATUS_CALLBACK_URL");
+  if (statusCallback) params.set("StatusCallback", statusCallback);
 
   const res = await fetch(`${API_BASE}/Accounts/${sid}/Messages.json`, {
     method: "POST",

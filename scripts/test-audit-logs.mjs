@@ -77,6 +77,41 @@ async function main() {
     fail('UPDATE directo a counters passou -- FALHA GRAVE', JSON.stringify(directCounterUpdate));
   }
 
+  console.log('\n6. owner_add_owner / owner_remove_owner escrevem auditoria (Fase 4/17 -- antes não escreviam nada)');
+  const svc = createClient(URL, SERVICE_ROLE_KEY);
+  const ownerAEmail = `teste-owner-audit-a-${Date.now()}@example.com`;
+  const ownerBEmail = `teste-owner-audit-b-${Date.now()}@example.com`;
+  const ownerAId = await createTestCustomer(ownerAEmail, 'senha123456');
+  const ownerBId = await createTestCustomer(ownerBEmail, 'senha123456');
+  await svc.from('owners').insert({ id: ownerAId, name: 'Dono Teste A (auditoria)' });
+  const ownerA = createClient(URL, ANON_KEY);
+  await ownerA.auth.signInWithPassword({ email: ownerAEmail, password: 'senha123456' });
+
+  const addResult = await ownerA.rpc('owner_add_owner', { p_email: ownerBEmail, p_name: 'Dono Teste B (auditoria)' });
+  if (addResult.error) fail('owner_add_owner falhou inesperadamente', addResult.error.message);
+  const removeResult = await ownerA.rpc('owner_remove_owner', { p_user_id: ownerBId });
+  if (removeResult.error) fail('owner_remove_owner falhou inesperadamente', removeResult.error.message);
+
+  const { data: ownerLogs, error: ownerLogsErr } = await ownerA.from('audit_logs').select('action').eq('entity_id', ownerBId).order('created_at');
+  if (ownerLogsErr) fail('dono não conseguiu ler audit_logs de outro dono', ownerLogsErr.message);
+  const ownerActions = (ownerLogs ?? []).map((l) => l.action);
+  if (ownerActions.includes('owner_add_owner') && ownerActions.includes('owner_remove_owner')) {
+    ok(`dono vê os registos de owner_add_owner/owner_remove_owner: ${ownerActions.join(', ')}`);
+  } else {
+    fail('faltam registos de auditoria para adicionar/remover dono', JSON.stringify(ownerActions));
+  }
+
+  const asStaffManager = await manager.from('audit_logs').select('*').eq('entity_id', ownerBId);
+  if (Array.isArray(asStaffManager.data) && asStaffManager.data.length === 0) {
+    ok('staff (não-dono) não vê auditoria de gestão de donos');
+  } else {
+    fail('staff conseguiu ver auditoria de gestão de donos -- FUGA', JSON.stringify(asStaffManager));
+  }
+
+  await svc.from('owners').delete().eq('id', ownerAId);
+  await deleteAuthUser(ownerAId);
+  await deleteAuthUser(ownerBId);
+
   await deleteAuthUser(customerId);
   console.log(failures === 0 ? '\nTUDO OK -- audit_logs e hardening de GRANTs validados.\n' : `\n${failures} verificação(ões) falharam.\n`);
   process.exit(failures === 0 ? 0 : 1);

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '../supabase';
+import { reportError } from '../sentry';
 import type { StaffProfile } from '../types';
 
 interface AuthState {
@@ -67,7 +68,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function login(email: string, password: string) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error || !data.user) throw error ?? new Error('login-failed');
+    if (error || !data.user) {
+      // Nunca o email/password em si -- só a classificação do erro
+      // (código da Auth), suficiente para detectar um pico de falhas
+      // de login sem guardar quem tentou nem com que credencial.
+      reportError(error ?? new Error('login-failed'), { flow: 'staff_login', authErrorCode: error?.code });
+      throw error ?? new Error('login-failed');
+    }
     const p = await fetchProfile(data.user.id);
     if (!p) {
       await supabase.auth.signOut();
