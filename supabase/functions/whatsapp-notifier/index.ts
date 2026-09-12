@@ -6,7 +6,7 @@
 // (prioridade desc, criação asc), quem ficou a 3 posições da vez.
 import { serviceClient } from "../_shared/citizenSession.ts";
 import { logEvent } from "../_shared/messageLog.ts";
-import { sendTemplate } from "../_shared/meta.ts";
+import { sendNotification } from "../_shared/notifications/engine.ts";
 
 const NEAR_TURN_THRESHOLD = 2; // 2 senhas à frente = 3ª posição
 
@@ -35,18 +35,24 @@ async function contactPhoneFor(db: ReturnType<typeof serviceClient>, customerId:
   return data?.phone ?? null;
 }
 
-async function alreadyNotified(db: ReturnType<typeof serviceClient>, event: string, ticketId: string): Promise<boolean> {
-  const { data } = await db.from("whatsapp_message_log").select("meta_message_id").eq("event", event).eq("ticket_id", ticketId).limit(1);
-  return (data?.length ?? 0) > 0;
-}
-
 async function notifyIfCalled(db: ReturnType<typeof serviceClient>, record: TicketRow, oldRecord: TicketRow | null) {
   if (record.status !== "serving" || oldRecord?.status === "serving") return;
   const phone = await contactPhoneFor(db, record.customer_id);
-  if (!phone) return;
+  if (!phone || !record.customer_id) return;
 
-  await sendTemplate(phone, "QUEUE_CALLED", [record.code, record.counter_id ?? "—"]);
-  await logEvent(phone, "queue_called_notified", record.id);
+  // Prioridade "high" (Fase 12: "é a sua vez") -- nunca deve ficar
+  // atrás de avisos de prioridade mais baixa numa fila de
+  // reprocessamento futura.
+  const result = await sendNotification({
+    eventId: `queue_called:${record.id}`,
+    userId: record.customer_id,
+    to: phone,
+    channel: "whatsapp",
+    priority: "high",
+    templateKey: "QUEUE_CALLED",
+    bodyParams: [record.code, record.counter_id ?? "—"],
+  });
+  if (result.sent) await logEvent(phone, "queue_called_notified", record.id);
 }
 
 async function notifyNearTurn(db: ReturnType<typeof serviceClient>, institutionId: string, branchId: string) {
@@ -68,12 +74,20 @@ async function notifyNearTurn(db: ReturnType<typeof serviceClient>, institutionI
   if (!target) return;
 
   const phone = await contactPhoneFor(db, target.customer_id);
-  if (!phone) return;
+  if (!phone || !target.customer_id) return;
 
-  if (await alreadyNotified(db, "queue_near_turn_notified", target.id)) return;
-
-  await sendTemplate(phone, "QUEUE_NEAR_TURN", [target.code]);
-  await logEvent(phone, "queue_near_turn_notified", target.id);
+  // Prioridade "medium" (Fase 12: "está quase") -- nunca deve bloquear
+  // um envio "critical" (OTP) nem "high" concorrente.
+  const result = await sendNotification({
+    eventId: `queue_near_turn:${target.id}`,
+    userId: target.customer_id,
+    to: phone,
+    channel: "whatsapp",
+    priority: "medium",
+    templateKey: "QUEUE_NEAR_TURN",
+    bodyParams: [target.code],
+  });
+  if (result.sent) await logEvent(phone, "queue_near_turn_notified", target.id);
 }
 
 Deno.serve(async (req: Request) => {

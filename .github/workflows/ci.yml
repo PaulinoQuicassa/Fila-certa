@@ -161,7 +161,7 @@ jobs:
       - name: Regressão completa (8 scripts) contra o ambiente local
         run: |
           set -e
-          for f in test-phase9 test-phase12 test-security-hardening test-public-aggregates test-flutter-data-paths test-audit-logs test-rls-gaps-closed; do
+          for f in test-phase9 test-phase12 test-security-hardening test-public-aggregates test-flutter-data-paths test-audit-logs test-rls-gaps-closed test-notification-engine; do
             echo "::group::$f"
             node "scripts/$f.mjs"
             echo "::endgroup::"

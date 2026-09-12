@@ -88,6 +88,12 @@ supabase secrets set META_PHONE_NUMBER_ID=...
 ficam automaticamente disponíveis a qualquer Edge Function do projecto
 — não precisam de ser definidas manualmente.
 
+`whatsapp-notifier` já não chama `sendTemplate` directamente — passa
+pelo motor de notificações (`_shared/notifications/engine.ts`), que
+grava o estado real de cada envio e permite trocar/adicionar um
+fornecedor (Twilio, como fallback ou principal) sem tocar neste canal.
+Ver `docs/notifications-architecture.md`.
+
 ## 6. Templates Meta
 
 Mensagens dentro da janela de 24h (depois de o cidadão escrever)
