@@ -1,0 +1,19 @@
+-- Fase 15/24 do hardening: elimina a segunda fonte de verdade morta
+-- para "recebe notificações por WhatsApp".
+--
+-- `whatsapp_contacts` + telefone verificado (auth.users.phone /
+-- phone_confirmed_at) é a única fonte real desde
+-- 20260912100000_phone_verified_whatsapp_link.sql
+-- (set_whatsapp_notifications / whatsapp_notifications_status) -- é o
+-- que o servidor consulta de facto para decidir se manda uma
+-- mensagem (ver whatsapp-notifier/index.ts, contactPhoneFor()).
+--
+-- `user_settings.whatsapp` (20260906190000_initial_schema.sql) nunca
+-- foi essa fonte: nenhuma RPC/Edge Function alguma vez a leu para
+-- decidir um envio, e o cliente Flutter confirmou (nesta mesma ronda
+-- de hardening) que também nunca a expôs em nenhum ecrã -- só existia
+-- uma leitura/escrita directa da coluna em memória, sem nenhum
+-- consumidor real. Mantê-la seria uma armadilha: um dia alguém podia
+-- ligar-lhe um toggle na UI pensando que controla o WhatsApp de
+-- verdade, sem controlar nada.
+alter table user_settings drop column if exists whatsapp;
