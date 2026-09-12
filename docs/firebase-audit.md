@@ -195,9 +195,19 @@ Três scripts em `fila-certa-staff/scripts/`, todos idempotentes:
 
 **Achado de segurança a registar (não corrigir sem instrução — fora do
 âmbito desta auditoria):** todas as contas de staff usam a mesma
-password `teste123`, em texto simples, no código-fonte versionado —
-aceitável para um piloto de testes, mas nunca deve ser replicado para
-uma password real de produção.
+password em texto simples, no código-fonte versionado — aceitável para
+um piloto de testes, mas nunca deve ser replicado para uma password
+real de produção.
+
+**Actualização 2026-09-12:** este achado deixou de estar "por corrigir
+sem instrução" — uma auditoria de segurança dedicada confirmou-o como
+achado Crítico (as contas já estavam a ser usadas em produção, não só
+em teste). A password deixou de estar hardcoded em qualquer ficheiro
+(ver `scripts/lib/test-env.mjs`, `TEST_STAFF_PASSWORD` por variável de
+ambiente, nunca commitada) — mas a rotação em si das 12 contas reais
+(`scripts/rotate-staff-passwords.mjs`) só o dono da conta Supabase
+consegue executar (precisa da `service_role key` de produção); ver
+`docs/security-credentials.md` para o estado exacto.
 
 ## 9. O que precisa de ser migrado
 

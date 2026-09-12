@@ -3,10 +3,7 @@
 // pedidos, testando SEMPRE os dois planos: REST (SELECT directo) e
 // Realtime (entrega de eventos) -- nunca só um dos dois.
 import { createClient } from '@supabase/supabase-js';
-
-const URL = process.env.SUPABASE_URL ?? 'https://qdfpqispcntitvczybfl.supabase.co';
-const ANON_KEY = process.env.SUPABASE_ANON_KEY ?? 'sb_publishable_HLelr-FOPvSL9a5w8_feUw_FfKIrOoQ';
-const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+import { SUPABASE_URL as URL, SUPABASE_ANON_KEY as ANON_KEY, SUPABASE_SERVICE_ROLE_KEY as SERVICE_ROLE_KEY, TEST_STAFF_PASSWORD } from './lib/test-env.mjs';
 
 let failures = 0;
 const ok = (l) => console.log(`  OK  ${l}`);
@@ -72,8 +69,8 @@ async function main() {
   await customerB.auth.signInWithPassword({ email: emailB, password: 'senha123456' });
   const agentSiac = client();
   const managerSiac = client();
-  await agentSiac.auth.signInWithPassword({ email: 'agente@siac.test', password: 'teste123' });
-  await managerSiac.auth.signInWithPassword({ email: 'gestor@siac.test', password: 'teste123' });
+  await agentSiac.auth.signInWithPassword({ email: 'agente@siac.test', password: TEST_STAFF_PASSWORD });
+  await managerSiac.auth.signInWithPassword({ email: 'gestor@siac.test', password: TEST_STAFF_PASSWORD });
 
   // Filial temporária na mesma instituição (SIAC), para testar isolamento
   // entre filiais -- os dados de seed só tinham 1 filial por instituição.

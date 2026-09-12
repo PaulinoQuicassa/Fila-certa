@@ -34,9 +34,22 @@ export async function ensureAnonymousSession() {
 // Mesmo tratamento de "não secreto" que o resto deste ficheiro: quem
 // está fisicamente à frente do quiosque já pode tirar uma senha à
 // vontade, expor a conta que faz exactamente isso não abre nenhuma
-// porta nova.
-const STATION_EMAIL = import.meta.env.VITE_STATION_EMAIL ?? 'estacao@filacerta.test';
-const STATION_PASSWORD = import.meta.env.VITE_STATION_PASSWORD ?? 'teste123';
+// porta nova -- MAS isso só é seguro se a própria password não for
+// também reutilizada noutro sítio (ver docs/security-credentials.md:
+// uma auditoria em 2026-09-12 encontrou esta variável sem valor
+// definido a cair para a mesma password de staff, tornando a conta de
+// estação autenticável a partir de fora do quiosque físico). Sem
+// fallback agora -- tem de estar sempre definida explicitamente.
+const STATION_EMAIL = import.meta.env.VITE_STATION_EMAIL;
+const STATION_PASSWORD = import.meta.env.VITE_STATION_PASSWORD;
+
+if (!STATION_EMAIL || !STATION_PASSWORD) {
+  // Não é `throw` ao nível do módulo (como URL/ANON_KEY acima) -- a
+  // conta de estação só é precisa em `/estacao`, não deve impedir o
+  // resto da app de arrancar se faltar. `ensureStationSession` falha
+  // com uma mensagem clara quando esse ecrã específico for aberto.
+  console.warn('VITE_STATION_EMAIL / VITE_STATION_PASSWORD em falta -- /estacao vai falhar até estarem definidas (ver .env.example).');
+}
 
 /** Garante a sessão da conta de estação -- usado só por `Estacao.tsx`. */
 export async function ensureStationSession() {

@@ -3,10 +3,8 @@
 // só por instituição -- pedido explícito do utilizador ("validar
 // isolamento cross-branch/cross-institution").
 import { createClient } from '@supabase/supabase-js';
+import { SUPABASE_URL as URL, SUPABASE_ANON_KEY as ANON_KEY, SUPABASE_SERVICE_ROLE_KEY as SERVICE_ROLE_KEY, TEST_STAFF_PASSWORD } from './lib/test-env.mjs';
 
-const URL = process.env.SUPABASE_URL ?? 'https://qdfpqispcntitvczybfl.supabase.co';
-const ANON_KEY = process.env.SUPABASE_ANON_KEY ?? 'sb_publishable_HLelr-FOPvSL9a5w8_feUw_FfKIrOoQ';
-const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const svc = createClient(URL, SERVICE_ROLE_KEY);
 
 let failures = 0;
@@ -35,9 +33,9 @@ async function main() {
   const customerA = createClient(URL, ANON_KEY);
   await customerA.auth.signInWithPassword({ email: emailA, password: 'senha123456' });
   const agentSiac = createClient(URL, ANON_KEY); // agente@siac.test -- staff de balcao-talatona, NÃO de balcao-viana-rls-teste
-  await agentSiac.auth.signInWithPassword({ email: 'agente@siac.test', password: 'teste123' });
+  await agentSiac.auth.signInWithPassword({ email: 'agente@siac.test', password: TEST_STAFF_PASSWORD });
   const managerOther = createClient(URL, ANON_KEY); // gestor@filacerta.test -- staff do Banco Exemplo, outra instituição
-  await managerOther.auth.signInWithPassword({ email: 'gestor@filacerta.test', password: 'teste123' });
+  await managerOther.auth.signInWithPassword({ email: 'gestor@filacerta.test', password: TEST_STAFF_PASSWORD });
 
   console.log('\n1. ratings: staff da MESMA filial vê a avaliação; staff doutra instituição não vê');
   const { data: ticket } = await customerA.rpc('pull_ticket', { p_institution_id: 'siac', p_branch_id: 'balcao-talatona', p_service: 'Registo Civil' });

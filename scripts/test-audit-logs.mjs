@@ -3,10 +3,7 @@
 // aparece para a equipa da filial certa, e que fica invisível para
 // quem não devia ver (cliente, staff doutra filial).
 import { createClient } from '@supabase/supabase-js';
-
-const URL = process.env.SUPABASE_URL ?? 'https://qdfpqispcntitvczybfl.supabase.co';
-const ANON_KEY = process.env.SUPABASE_ANON_KEY ?? 'sb_publishable_HLelr-FOPvSL9a5w8_feUw_FfKIrOoQ';
-const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+import { SUPABASE_URL as URL, SUPABASE_ANON_KEY as ANON_KEY, SUPABASE_SERVICE_ROLE_KEY as SERVICE_ROLE_KEY, TEST_STAFF_PASSWORD } from './lib/test-env.mjs';
 
 let failures = 0;
 const ok = (l) => console.log(`  OK  ${l}`);
@@ -30,9 +27,9 @@ async function main() {
   const manager = createClient(URL, ANON_KEY);
   const otherManager = createClient(URL, ANON_KEY);
   await customer.auth.signInWithPassword({ email, password: 'senha123456' });
-  await agent.auth.signInWithPassword({ email: 'agente@siac.test', password: 'teste123' });
-  await manager.auth.signInWithPassword({ email: 'gestor@siac.test', password: 'teste123' });
-  await otherManager.auth.signInWithPassword({ email: 'gestor@filacerta.test', password: 'teste123' });
+  await agent.auth.signInWithPassword({ email: 'agente@siac.test', password: TEST_STAFF_PASSWORD });
+  await manager.auth.signInWithPassword({ email: 'gestor@siac.test', password: TEST_STAFF_PASSWORD });
+  await otherManager.auth.signInWithPassword({ email: 'gestor@filacerta.test', password: TEST_STAFF_PASSWORD });
 
   console.log('\n1. pull_ticket + call_next + complete_current geram registos de auditoria');
   const { data: ticket } = await customer.rpc('pull_ticket', { p_institution_id: 'siac', p_branch_id: 'balcao-talatona', p_service: 'Registo Civil' });
