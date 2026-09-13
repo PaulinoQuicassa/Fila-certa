@@ -1,6 +1,7 @@
 import { Navigate, Route, BrowserRouter, Routes } from 'react-router-dom';
 import * as Sentry from '@sentry/react';
 import { AuthProvider, useAuth } from './auth/AuthContext';
+import { AuthLoading } from './components/AuthLoading';
 import { Login } from './pages/Login';
 import { AgentScreen } from './pages/AgentScreen';
 import { Dashboard } from './pages/Dashboard';
@@ -18,7 +19,7 @@ function homeRouteFor(role: StaffRole) {
 function RequireRole({ role, children }: { role: StaffRole; children: React.ReactNode }) {
   const { user, profile, loading } = useAuth();
 
-  if (loading) return null;
+  if (loading) return <AuthLoading label="A verificar a sessão…" />;
   if (!user || !profile) return <Navigate to="/login" replace />;
   if (profile.role !== role) {
     return <Navigate to={homeRouteFor(profile.role)} replace />;
@@ -28,7 +29,7 @@ function RequireRole({ role, children }: { role: StaffRole; children: React.Reac
 
 function LoginRoute() {
   const { user, profile, loading } = useAuth();
-  if (loading) return null;
+  if (loading) return <AuthLoading label="A verificar a sessão…" />;
   if (user && profile) {
     return <Navigate to={homeRouteFor(profile.role)} replace />;
   }

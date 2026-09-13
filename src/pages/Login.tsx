@@ -37,29 +37,37 @@ export function Login() {
           <div style={{ fontSize: 14, color: 'var(--fc-text-secondary)', marginTop: 4 }}>Acesso de equipa</div>
         </div>
 
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, fontWeight: 600, color: 'var(--fc-text-secondary)' }}>
+        <label htmlFor="staff-email" style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, fontWeight: 600, color: 'var(--fc-text-secondary)' }}>
           Email
           <input
+            id="staff-email"
             type="email"
             required
+            autoComplete="username"
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? 'staff-login-error' : undefined}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            style={{ padding: '12px 14px', borderRadius: 'var(--fc-radius-md)', border: '1.5px solid var(--fc-border)', fontSize: 15 }}
+            style={{ padding: '12px 14px', borderRadius: 'var(--fc-radius-md)', border: '1.5px solid var(--fc-border)', fontSize: 15, minHeight: 'var(--fc-touch)' }}
           />
         </label>
 
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, fontWeight: 600, color: 'var(--fc-text-secondary)' }}>
+        <label htmlFor="staff-password" style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, fontWeight: 600, color: 'var(--fc-text-secondary)' }}>
           Palavra-passe
           <input
+            id="staff-password"
             type="password"
             required
+            autoComplete="current-password"
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? 'staff-login-error' : undefined}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            style={{ padding: '12px 14px', borderRadius: 'var(--fc-radius-md)', border: '1.5px solid var(--fc-border)', fontSize: 15 }}
+            style={{ padding: '12px 14px', borderRadius: 'var(--fc-radius-md)', border: '1.5px solid var(--fc-border)', fontSize: 15, minHeight: 'var(--fc-touch)' }}
           />
         </label>
 
-        {error && <div style={{ fontSize: 13, color: 'var(--fc-danger)' }}>{error}</div>}
+        {error && <div id="staff-login-error" role="alert" style={{ fontSize: 13, color: 'var(--fc-danger)' }}>{error}</div>}
 
         <button type="submit" disabled={busy} className="fc-btn fc-btn--primary">
           {busy ? 'A entrar…' : 'Entrar'}

@@ -120,7 +120,7 @@ export function PublicDisplay() {
           }}
         >
           <span style={{ fontSize: 48 }}>🔊</span>
-          <span style={{ fontSize: 24, fontWeight: 700 }}>Toque para ativar o som das chamadas</span>
+          <span style={{ fontSize: 24, fontWeight: 700 }}>Toque para activar o som das chamadas</span>
           <span style={{ fontSize: 14, color: 'rgba(255,255,255,0.6)' }}>
             Só é preciso uma vez -- o browser bloqueia som até haver uma interacção nesta página.
           </span>
@@ -136,11 +136,15 @@ export function PublicDisplay() {
         <div style={{ fontSize: 20, fontWeight: 600, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.55)' }}>
           Chamando agora
         </div>
-        <div style={{ fontSize: 180, fontWeight: 800, lineHeight: 1, letterSpacing: '-0.02em' }}>
+        <div
+          aria-live="assertive"
+          aria-atomic="true"
+          style={{ fontSize: 180, fontWeight: 800, lineHeight: 1, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}
+        >
           {board.current?.code ?? '—'}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, background: 'rgba(255,255,255,0.08)', padding: '14px 32px', borderRadius: 999 }}>
-          <span style={{ fontSize: 30, fontWeight: 700 }}>{board.current?.counterLabel ?? 'Aguardando'}</span>
+          <span aria-live="polite" style={{ fontSize: 30, fontWeight: 700 }}>{board.current?.counterLabel ?? 'A aguardar'}</span>
         </div>
       </div>
 
@@ -156,7 +160,7 @@ export function PublicDisplay() {
 
       <div style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid rgba(255,255,255,0.14)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.6)' }}>
-          Tempo médio de espera hoje: <strong style={{ color: '#fff' }}>{avg ?? '—'} min</strong>
+          Espera média hoje · <strong style={{ color: '#fff' }}>{avg ?? '—'} min</strong>
         </div>
         <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.4)' }}>Fila Certa</div>
       </div>

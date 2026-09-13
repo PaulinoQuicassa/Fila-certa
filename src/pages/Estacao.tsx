@@ -33,7 +33,7 @@ export function Estacao() {
     ensureStationSession()
       .then(() => setStage('ready'))
       .catch((err: Error) => {
-        setErrorMessage(err.message);
+        setErrorMessage('Não foi possível preparar a estação. Tente novamente.');
         setStage('error');
       });
   }, []);
@@ -85,7 +85,7 @@ export function Estacao() {
               ensureStationSession()
                 .then(() => setStage('ready'))
                 .catch((err: Error) => {
-                  setErrorMessage(err.message);
+                  setErrorMessage('Não foi possível preparar a estação. Tente novamente.');
                   setStage('error');
                 });
             }}

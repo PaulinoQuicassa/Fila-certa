@@ -14,6 +14,7 @@ import {
   transferTicket,
 } from '../lib/queue';
 import type { Counter, Ticket } from '../types';
+import { humanError } from '../lib/humanError';
 
 function minutesAgo(ts: number | null) {
   if (!ts) return null;
@@ -105,17 +106,13 @@ export function AgentScreen() {
     } catch (err) {
       console.error(err);
       reportError(err, { institutionId, branchId, counterId, screen: 'AgentScreen' });
-      setError(err instanceof Error ? err.message : 'Ocorreu um erro inesperado.');
+      setError(humanError(err));
     } finally {
       setBusy(false);
     }
   }
 
-  const statusOptions: Array<{ label: string; active: boolean; onClick: () => void }> = [
-    { label: 'Disponível', active: counter?.status === 'available', onClick: () => run(() => setCounterPaused(institutionId, branchId, counterId, false)) },
-    { label: 'Em atendimento', active: counter?.status === 'serving', onClick: () => {} },
-    { label: 'Pausa', active: isPaused, onClick: () => run(() => setCounterPaused(institutionId, branchId, counterId, !isPaused)) },
-  ];
+  const statusLabel = isPaused ? 'Em pausa' : currentTicket ? 'Em atendimento' : 'Disponível';
 
   return (
     <div style={{ minHeight: '100vh', padding: 32, display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -131,20 +128,40 @@ export function AgentScreen() {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <div style={{ display: 'flex', gap: 4, background: 'var(--fc-bg)', borderRadius: 999, padding: 4 }}>
-            {statusOptions.map((opt) => (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span
+              className="fc-pill"
+              aria-live="polite"
+              style={{ background: isPaused ? 'var(--fc-orange-bg)' : 'var(--fc-green-light)', color: isPaused ? 'var(--fc-orange)' : 'var(--fc-green)' }}
+            >
+              {statusLabel}
+            </span>
+            <div role="group" aria-label="Estado do balcão" style={{ display: 'flex', gap: 4, background: 'var(--fc-bg)', borderRadius: 999, padding: 4 }}>
               <button
-                key={opt.label}
-                onClick={opt.onClick}
+                type="button"
+                disabled={busy || !isPaused}
+                onClick={() => run(() => setCounterPaused(institutionId, branchId, counterId, false))}
                 style={{
-                  padding: '8px 16px', borderRadius: 999, fontSize: 13, fontWeight: 700,
-                  background: opt.active ? 'var(--fc-blue-dark)' : 'transparent',
-                  color: opt.active ? '#fff' : 'var(--fc-text-secondary)',
+                  padding: '8px 16px', borderRadius: 999, fontSize: 13, fontWeight: 700, minHeight: 36,
+                  background: !isPaused ? 'var(--fc-blue-dark)' : 'transparent',
+                  color: !isPaused ? '#fff' : 'var(--fc-text-secondary)',
                 }}
               >
-                {opt.label}
+                Disponível
               </button>
-            ))}
+              <button
+                type="button"
+                disabled={busy || isPaused}
+                onClick={() => run(() => setCounterPaused(institutionId, branchId, counterId, true))}
+                style={{
+                  padding: '8px 16px', borderRadius: 999, fontSize: 13, fontWeight: 700, minHeight: 36,
+                  background: isPaused ? 'var(--fc-blue-dark)' : 'transparent',
+                  color: isPaused ? '#fff' : 'var(--fc-text-secondary)',
+                }}
+              >
+                Pausa
+              </button>
+            </div>
           </div>
           <button onClick={() => logout()} style={{ fontSize: 13, fontWeight: 600, color: 'var(--fc-text-secondary)' }}>
             Terminar sessão
@@ -153,7 +170,7 @@ export function AgentScreen() {
       </div>
 
       {error && (
-        <div className="fc-card" style={{ background: 'var(--fc-danger-bg, #fdecea)', boxShadow: 'none', padding: '14px 20px', color: 'var(--fc-danger)', fontSize: 13.5, fontWeight: 600 }}>
+        <div role="alert" className="fc-card" style={{ background: 'var(--fc-danger-bg, #fdecea)', boxShadow: 'none', padding: '14px 20px', color: 'var(--fc-danger)', fontSize: 13.5, fontWeight: 600 }}>
           {error}
         </div>
       )}
@@ -288,7 +305,11 @@ export function AgentScreen() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 24, alignItems: 'center', padding: '40px 0' }}>
               <div style={{ fontSize: 16, color: 'var(--fc-text-secondary)' }}>
-                {isPaused ? 'Fila em pausa.' : 'Nenhuma senha em atendimento.'}
+                {isPaused
+                  ? 'A fila está em pausa. Retome quando estiver pronto a atender.'
+                  : eligibleQueue.length === 0
+                    ? 'Não há ninguém à espera neste balcão.'
+                    : 'Pronto a atender. Chame a próxima senha.'}
               </div>
               <button
                 className="fc-btn fc-btn--primary"
@@ -326,7 +347,7 @@ export function AgentScreen() {
               </div>
             ))}
             {eligibleQueue.length === 0 && (
-              <div style={{ fontSize: 13, color: 'var(--fc-text-secondary)' }}>Sem senhas em espera.</div>
+              <div style={{ fontSize: 13, color: 'var(--fc-text-secondary)' }}>Ninguém à espera. A fila está vazia neste momento.</div>
             )}
           </div>
         </div>

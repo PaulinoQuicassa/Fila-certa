@@ -70,13 +70,18 @@ function AlertCard({ alert }: { alert: DirectorAlert }) {
   const style = SEVERITY_STYLE[alert.severity];
   return (
     <div style={{ border: '1px solid var(--fc-border)', borderLeft: `4px solid ${style.color}`, borderRadius: 'var(--fc-radius-md)', padding: '14px 16px' }}>
-      <div onClick={() => setExpanded((v) => !v)} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, cursor: 'pointer' }}>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, width: '100%', textAlign: 'left', cursor: 'pointer' }}
+      >
         <div>
           <div style={{ fontSize: 11, fontWeight: 700, color: style.color, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 3 }}>{style.label}</div>
           <div style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.35 }}>{alert.title}</div>
         </div>
         <span style={{ fontSize: 13, color: 'var(--fc-text-secondary)', flexShrink: 0 }}>{expanded ? '▾' : '▸'}</span>
-      </div>
+      </button>
       {expanded && (
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--fc-border)', display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13, color: 'var(--fc-text-secondary)', lineHeight: 1.5 }}>
           <div><strong style={{ color: 'var(--fc-text-primary)' }}>Causa provável:</strong> {alert.causa}</div>
@@ -121,7 +126,7 @@ export function DirectorScreen() {
         setError(null);
       })
       .catch((err) => {
-        if (active) setError(err instanceof Error ? err.message : 'Não foi possível carregar o painel.');
+        if (active) setError('Não foi possível carregar o painel. Tente novamente.');
       })
       .finally(() => {
         if (active) setLoading(false);

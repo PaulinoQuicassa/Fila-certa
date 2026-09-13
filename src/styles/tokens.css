@@ -15,6 +15,7 @@
   --fc-white: #FFFFFF;
   --fc-text-primary: #102A43;
   --fc-text-secondary: #52677D;
+  --fc-text-muted: #7A8B9C;
   --fc-border: #DDE5EE;
 
   --fc-warning: #F59E0B;
@@ -22,6 +23,37 @@
   --fc-orange: #F28C28;
   --fc-orange-bg: #FEF0E3;
   --fc-danger-bg: #FDEAE9;
+  --fc-info: #2563EB;
+  --fc-info-bg: #E8F0FE;
+
+  --fc-primary: var(--fc-blue);
+  --fc-primary-dark: var(--fc-blue-dark);
+  --fc-primary-light: var(--fc-blue-light);
+  --fc-accent: var(--fc-orange);
+  --fc-background: var(--fc-bg);
+  --fc-surface: var(--fc-white);
+  --fc-surface-elevated: var(--fc-white);
+  --fc-success: var(--fc-green);
+  --fc-error: var(--fc-danger);
+
+  --fc-space-1: 4px;
+  --fc-space-2: 8px;
+  --fc-space-3: 12px;
+  --fc-space-4: 16px;
+  --fc-space-5: 24px;
+  --fc-space-6: 32px;
+  --fc-space-7: 48px;
+  --fc-space-8: 64px;
+  --fc-touch: 44px;
+
+  --fc-type-display: 32px;
+  --fc-type-h1: 22px;
+  --fc-type-h2: 17px;
+  --fc-type-h3: 15px;
+  --fc-type-body: 14px;
+  --fc-type-small: 13px;
+  --fc-type-caption: 12px;
+  --fc-type-numeric: 64px;
 
   --fc-radius-sm: 8px;
   --fc-radius-md: 12px;
@@ -44,6 +76,44 @@ body {
 
 button { font-family: inherit; cursor: pointer; border: none; background: none; }
 input { font-family: inherit; }
+
+:focus-visible {
+  outline: 2px solid var(--fc-blue);
+  outline-offset: 2px;
+}
+
+.fc-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.fc-skeleton {
+  border-radius: var(--fc-radius-md);
+  background: linear-gradient(90deg, #e8eef6 0%, #f7f9fc 50%, #e8eef6 100%);
+  background-size: 200% 100%;
+  animation: fc-shimmer 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fc-skeleton { animation: none; background: #e8eef6; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@keyframes fc-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
 
 .fc-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 10px;
