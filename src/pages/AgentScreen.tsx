@@ -4,6 +4,7 @@ import { reportError } from '../sentry';
 import {
   callNext,
   completeCurrent,
+  fetchCounter,
   markNoShow,
   recallCurrent,
   setCounterPaused,
@@ -103,6 +104,11 @@ export function AgentScreen() {
     setError(null);
     try {
       await action();
+      // Não confiar só no Realtime para reflectir a própria acção --
+      // "não consigo liberar o balcão, às vezes tenho que recarregar"
+      // era exactamente este eco a demorar/perder-se. O Realtime
+      // continua activo para os outros balcões/ecrãs verem a mudança.
+      setCounter(await fetchCounter(institutionId, branchId, counterId));
     } catch (err) {
       console.error(err);
       reportError(err, { institutionId, branchId, counterId, screen: 'AgentScreen' });

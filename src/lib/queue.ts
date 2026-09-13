@@ -158,6 +158,26 @@ type CounterRow = {
 
 const COUNTER_COLUMNS = 'id, label, status, current_ticket_id, current_agent_name, services';
 
+/** Leitura única do estado do balcão -- usada pela subscrição
+ * (`subscribeCounter`) e também chamada directamente a seguir a uma
+ * acção do agente (pausar/retomar/concluir/chamar) ter sucesso, para a
+ * UI actualizar de imediato mesmo que o evento do Realtime demore ou
+ * se perca (jitter de rede já confirmado noutros pontos desta app --
+ * ver test-realtime-delivery.mjs). O Realtime continua a ser a fonte
+ * de verdade para outros ecrãs a verem o mesmo balcão; isto é só para
+ * quem acabou de agir não ficar preso à espera do próprio eco. */
+export async function fetchCounter(institutionId: string, branchId: string, counterId: string): Promise<Counter | null> {
+  const { data, error } = await supabase
+    .from('counters_with_agent')
+    .select(COUNTER_COLUMNS)
+    .eq('institution_id', institutionId)
+    .eq('branch_id', branchId)
+    .eq('id', counterId)
+    .maybeSingle();
+  logQueryError('fetchCounter', error);
+  return data ? counterFromRow(data) : null;
+}
+
 export function subscribeCounter(
   institutionId: string,
   branchId: string,
@@ -165,15 +185,7 @@ export function subscribeCounter(
   onChange: (counter: Counter | null) => void,
 ) {
   async function refetch() {
-    const { data, error } = await supabase
-      .from('counters_with_agent')
-      .select(COUNTER_COLUMNS)
-      .eq('institution_id', institutionId)
-      .eq('branch_id', branchId)
-      .eq('id', counterId)
-      .maybeSingle();
-    logQueryError('subscribeCounter', error);
-    onChange(data ? counterFromRow(data) : null);
+    onChange(await fetchCounter(institutionId, branchId, counterId));
   }
   return watchTable('counters', branchId, refetch);
 }
