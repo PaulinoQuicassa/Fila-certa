@@ -390,6 +390,20 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# whatsapp-webhook (chamado pela Meta) e twilio-status-callback
+# (chamado pela Twilio) são endpoints externos -- nem a Meta nem a
+# Twilio sabem nada sobre a Auth do Supabase, por isso nunca enviam um
+# apikey/Authorization válido; com verify_jwt=true (omissão) o gateway
+# recusa-os com 401 antes do código de verificação de assinatura de
+# cada um (HMAC da Meta / Twilio) sequer correr. whatsapp-notifier
+# fica de fora -- só é chamado pelo trigger interno em Postgres, que já
+# define o Authorization explicitamente (ver docs/whatsapp-channel.md).
+[functions.whatsapp-webhook]
+verify_jwt = false
+
+[functions.twilio-status-callback]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327
