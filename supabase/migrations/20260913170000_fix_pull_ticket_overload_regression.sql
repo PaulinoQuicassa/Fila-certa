@@ -1,0 +1,23 @@
+-- CORRECÇÃO DE INCIDENTE EM PRODUÇÃO (2026-09-13): "Não é possível
+-- tirar senha" para todos os clientes.
+--
+-- Causa: ao sincronizar o histórico de migrations em produção
+-- (2026-09-13), 20260909120000_one_ticket_per_service.sql foi
+-- re-executado por ser "só create or replace function" -- mas a sua
+-- assinatura de pull_ticket tem 3 argumentos (sem p_channel), enquanto
+-- a versão realmente em uso tinha 4 (p_channel, adicionado em
+-- 20260910110000_whatsapp_channel.sql e mantido em
+-- 20260912110000_production_hardening.sql). `create or replace` com
+-- assinatura diferente cria um OVERLOAD novo em vez de substituir --
+-- ficaram duas versões de pull_ticket em simultâneo, e o PostgREST
+-- deixou de conseguir escolher qual chamar (erro PGRST203 "Could not
+-- choose the best candidate function"), partindo a fila para todos os
+-- clientes reais. Mesma classe de erro já identificada e corrigida
+-- para owner_create_institution nesta mesma ronda -- desta vez
+-- reintroduzida pelo próprio processo de sincronização do histórico,
+-- não por uma migração nova.
+--
+-- Corrige removendo a versão antiga de 3 argumentos -- a de 4
+-- argumentos (com o mecanismo de quiosque via kiosk_accounts, o
+-- advisory lock contra corridas, e o audit log) é que fica.
+drop function if exists public.pull_ticket(text, text, text);
