@@ -13,6 +13,12 @@ dist-ssr
 *.local
 .firebase
 
+# Ficheiros locais com segredos reais (Twilio, service_role key, nova
+# password de rotação) -- nunca commitados, mesmo com nome diferente
+# de *.local. Ver ".example" ao lado para o que cada um precisa.
+.env.secrets*
+!.env.secrets*.example
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
