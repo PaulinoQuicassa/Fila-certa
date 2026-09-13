@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { ensureStationSession } from '../supabase';
 import { pullTicket } from '../lib/queue';
 import { resolvePilotInstitution } from '../lib/pilotInstitutions';
+import { reportError } from '../sentry';
 
 // Depois de mostrar a senha, volta sozinho ao ecrã de escolha de
 // serviço -- um quiosque físico não deve ficar preso à espera de
@@ -33,6 +34,7 @@ export function Estacao() {
     ensureStationSession()
       .then(() => setStage('ready'))
       .catch((err: Error) => {
+        reportError(err, { flow: 'station_session', institutionId: INSTITUTION_ID, branchId: BRANCH_ID });
         setErrorMessage('Não foi possível preparar a estação. Tente novamente.');
         setStage('error');
       });
@@ -85,6 +87,7 @@ export function Estacao() {
               ensureStationSession()
                 .then(() => setStage('ready'))
                 .catch((err: Error) => {
+                  reportError(err, { flow: 'station_session_retry', institutionId: INSTITUTION_ID, branchId: BRANCH_ID });
                   setErrorMessage('Não foi possível preparar a estação. Tente novamente.');
                   setStage('error');
                 });

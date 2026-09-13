@@ -125,7 +125,9 @@ export function DirectorScreen() {
         setAlerts(a);
         setError(null);
       })
-      .catch((err) => {
+      .catch(() => {
+        // O erro em si já é reportado ao Sentry dentro de lib/queue.ts
+        // (rpc()) -- aqui só precisamos de mostrar a mensagem ao utilizador.
         if (active) setError('Não foi possível carregar o painel. Tente novamente.');
       })
       .finally(() => {
