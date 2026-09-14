@@ -106,6 +106,7 @@ aprovado**, fora dessa janela:
 |---|---|---|
 | `QUEUE_NEAR_TURN` | `queue_near_turn` / `pt_PT` | `{{1}}` = código da senha |
 | `QUEUE_CALLED` | `queue_called` / `pt_PT` | `{{1}}` = código da senha, `{{2}}` = balcão |
+| `QUEUE_TRANSFERRED` | `queue_transferred` / `pt_PT` | `{{1}}` = código da senha |
 
 Os nomes reais têm de ser criados e aprovados no Meta Business
 Manager **antes** de os usar — o registo em

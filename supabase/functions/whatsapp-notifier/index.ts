@@ -21,6 +21,7 @@ interface TicketRow {
   created_at: string;
   customer_id: string | null;
   counter_id: string | null;
+  transferred_to_counter_id: string | null;
 }
 
 interface WebhookPayload {
@@ -54,6 +55,31 @@ async function notifyIfCalled(db: ReturnType<typeof serviceClient>, record: Tick
     bodyParams: [record.code, record.counter_id ?? "—"],
   });
   if (result.sent) await logEvent(phone, "queue_called_notified", record.id);
+}
+
+// "Transferir" -- a senha volta a 'waiting' vinda de 'serving' (única
+// transição que transfer_ticket produz; nunca confundida com
+// pull_ticket, que entra directamente em 'waiting' via INSERT, não
+// UPDATE). Cliente nunca sabia disto sem ter a app aberta em primeiro
+// plano nesse instante -- ficava sem nenhum aviso externo.
+async function notifyIfTransferred(db: ReturnType<typeof serviceClient>, record: TicketRow, oldRecord: TicketRow | null) {
+  if (record.status !== "waiting" || oldRecord?.status !== "serving") return;
+  const phone = await contactPhoneFor(db, record.customer_id);
+  if (!phone || !record.customer_id) return;
+
+  // Prioridade "medium" -- informativo, não tão urgente como "é a sua
+  // vez", mas mais que um aviso geral (o cliente pode estar a caminho
+  // do balcão errado).
+  const result = await sendNotification({
+    eventId: `queue_transferred:${record.id}`,
+    userId: record.customer_id,
+    to: phone,
+    channel: "whatsapp",
+    priority: "medium",
+    templateKey: "QUEUE_TRANSFERRED",
+    bodyParams: [record.code],
+  });
+  if (result.sent) await logEvent(phone, "queue_transferred_notified", record.id);
 }
 
 async function notifyNearTurn(db: ReturnType<typeof serviceClient>, institutionId: string, branchId: string) {
@@ -103,6 +129,7 @@ Deno.serve(async (req: Request) => {
 
   try {
     await notifyIfCalled(db, payload.record, payload.old_record);
+    await notifyIfTransferred(db, payload.record, payload.old_record);
 
     // Uma senda saiu da fila (chamada/concluída/cancelada/no-show) --
     // as posições das restantes em espera podem ter mudado.

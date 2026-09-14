@@ -121,13 +121,15 @@ inventado — têm de vir da Twilio Console depois de aprovação real):
 TWILIO_ACCOUNT_SID=...
 TWILIO_AUTH_TOKEN=...
 TWILIO_WHATSAPP_FROM=whatsapp:+1...             # Sender aprovado no Twilio WhatsApp Business Platform
-TWILIO_WHATSAPP_TEMPLATE_QUEUE_CALLED=HX...     # Content SID do template "queue_called" aprovado
-TWILIO_WHATSAPP_TEMPLATE_QUEUE_NEAR_TURN=HX...  # Content SID do template "queue_near_turn" aprovado
+TWILIO_WHATSAPP_TEMPLATE_QUEUE_CALLED=HX...       # Content SID do template "queue_called" aprovado
+TWILIO_WHATSAPP_TEMPLATE_QUEUE_NEAR_TURN=HX...    # Content SID do template "queue_near_turn" aprovado
+TWILIO_WHATSAPP_TEMPLATE_QUEUE_TRANSFERRED=HX...  # Content SID do template "queue_transferred" aprovado
 TWILIO_STATUS_CALLBACK_URL=...                  # ver secção 8.1
 ```
 
 Cada `templateKey` lógico usado pelo motor (`QUEUE_CALLED`,
-`QUEUE_NEAR_TURN`) precisa do seu próprio `TWILIO_WHATSAPP_TEMPLATE_*`;
+`QUEUE_NEAR_TURN`, `QUEUE_TRANSFERRED`) precisa do seu próprio
+`TWILIO_WHATSAPP_TEMPLATE_*`;
 uma variável em falta faz esse envio falhar de forma explícita (nunca
 silenciosa) até estar configurada.
 

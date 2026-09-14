@@ -106,6 +106,7 @@ export function sendInteractiveList(to: string, bodyText: string, buttonText: st
 export const TEMPLATES = {
   QUEUE_NEAR_TURN: { name: "queue_near_turn", language: "pt_PT" },
   QUEUE_CALLED: { name: "queue_called", language: "pt_PT" },
+  QUEUE_TRANSFERRED: { name: "queue_transferred", language: "pt_PT" },
 } as const;
 
 export type TemplateKey = keyof typeof TEMPLATES;
