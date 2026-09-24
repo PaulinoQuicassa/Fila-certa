@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
-import { fetchDirectorAlerts, fetchDirectorBenchmarking, fetchDirectorKpis, fetchDirectorTrend } from '../lib/queue';
-import type { AlertSeverity, DirectorAlert, DirectorBenchmarkRow, DirectorKpis, DirectorPeriod, DirectorTrendPoint } from '../types';
+import { fetchDirectorAlerts, fetchDirectorBenchmarking, fetchDirectorCapacityKpis, fetchDirectorKpis, fetchDirectorTrend, updateBranchCapacity } from '../lib/queue';
+import type { AlertSeverity, BranchCapacity, DirectorAlert, DirectorBenchmarkRow, DirectorKpis, DirectorPeriod, DirectorTrendPoint } from '../types';
 
 const SLA_MINUTES = 15; // mesma meta usada no Dashboard do gestor
 
@@ -93,6 +93,142 @@ function AlertCard({ alert }: { alert: DirectorAlert }) {
   );
 }
 
+const CAPACITY_STYLE: Record<BranchCapacity['state'], { label: string; color: string; bg: string }> = {
+  green: { label: 'Disponível', color: 'var(--fc-green)', bg: 'var(--fc-green-light)' },
+  yellow: { label: 'Limitada', color: 'var(--fc-warning)', bg: 'var(--fc-orange-bg)' },
+  red: { label: 'Esgotada', color: 'var(--fc-danger)', bg: 'var(--fc-danger-bg)' },
+};
+
+function toTimeInput(value: string | null): string {
+  return value ? value.slice(0, 5) : '';
+}
+
+interface CapacityFormState {
+  openingTime: string;
+  closingTime: string;
+  safetyMarginMinutes: string;
+  dailyCapacity: string;
+  avgServiceMinutes: string;
+  gateEnabled: boolean;
+}
+
+function formFromBranch(b: BranchCapacity): CapacityFormState {
+  return {
+    openingTime: toTimeInput(b.openingTime),
+    closingTime: toTimeInput(b.closingTime),
+    safetyMarginMinutes: String(b.safetyMarginMinutes),
+    dailyCapacity: b.dailyCapacity === null ? '' : String(b.dailyCapacity),
+    avgServiceMinutes: String(b.avgServiceMinutes),
+    gateEnabled: b.gateEnabled,
+  };
+}
+
+function CapacityCard({ branch, institutionId, onSaved }: { branch: BranchCapacity; institutionId: string; onSaved: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState<CapacityFormState>(() => formFromBranch(branch));
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const style = CAPACITY_STYLE[branch.state];
+
+  useEffect(() => {
+    if (!editing) setForm(formFromBranch(branch));
+  }, [branch, editing]);
+
+  const save = async () => {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await updateBranchCapacity({
+        institutionId,
+        branchId: branch.branchId,
+        openingTime: form.openingTime || null,
+        closingTime: form.closingTime || null,
+        safetyMarginMinutes: Number(form.safetyMarginMinutes) || 0,
+        dailyCapacity: form.dailyCapacity === '' ? null : Number(form.dailyCapacity),
+        avgServiceMinutes: Number(form.avgServiceMinutes) || 1,
+        gateEnabled: form.gateEnabled,
+      });
+      setEditing(false);
+      onSaved();
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : 'Não foi possível guardar.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{ border: '1px solid var(--fc-border)', borderRadius: 'var(--fc-radius-md)', padding: '16px 18px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 700 }}>{branch.branchName}</div>
+          <div style={{ fontSize: 12, color: 'var(--fc-text-secondary)' }}>
+            {branch.gateEnabled ? `${branch.position - 1} na fila · ~${branch.etaMinutes} min · ${branch.activeCounters} balcão(ões) activo(s)` : 'Capacidade Inteligente desligada'}
+          </div>
+        </div>
+        <span className="fc-pill" style={{ background: style.bg, color: style.color }}>{branch.gateEnabled ? style.label : 'Desligada'}</span>
+      </div>
+
+      {branch.gateEnabled && (
+        <div style={{ display: 'flex', gap: 16, marginTop: 10, fontSize: 12, color: 'var(--fc-text-secondary)', flexWrap: 'wrap' }}>
+          <span>Capacidade restante (volume): {branch.remainingByVolume ?? 'sem limite'}</span>
+          <span>Capacidade restante (tempo): {branch.remainingByTime ?? '—'}</span>
+          <span>Concluídos hoje: {branch.doneToday}{branch.dailyCapacity !== null ? ` / ${branch.dailyCapacity}` : ''}</span>
+        </div>
+      )}
+
+      {!editing ? (
+        <button onClick={() => setEditing(true)} className="fc-btn fc-btn--secondary" style={{ marginTop: 12 }}>
+          Configurar
+        </button>
+      ) : (
+        <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--fc-border)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 12 }}>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: 'var(--fc-text-secondary)' }}>
+              Abertura
+              <input type="time" value={form.openingTime} onChange={(e) => setForm((f) => ({ ...f, openingTime: e.target.value }))}
+                style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--fc-border)' }} />
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: 'var(--fc-text-secondary)' }}>
+              Encerramento
+              <input type="time" value={form.closingTime} onChange={(e) => setForm((f) => ({ ...f, closingTime: e.target.value }))}
+                style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--fc-border)' }} />
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: 'var(--fc-text-secondary)' }}>
+              Margem de segurança (min)
+              <input type="number" min={0} value={form.safetyMarginMinutes} onChange={(e) => setForm((f) => ({ ...f, safetyMarginMinutes: e.target.value }))}
+                style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--fc-border)' }} />
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: 'var(--fc-text-secondary)' }}>
+              Tempo médio de atendimento (min)
+              <input type="number" min={1} value={form.avgServiceMinutes} onChange={(e) => setForm((f) => ({ ...f, avgServiceMinutes: e.target.value }))}
+                style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--fc-border)' }} />
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: 'var(--fc-text-secondary)' }}>
+              Capacidade diária (vazio = sem limite)
+              <input type="number" min={0} value={form.dailyCapacity} onChange={(e) => setForm((f) => ({ ...f, dailyCapacity: e.target.value }))}
+                style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--fc-border)' }} />
+            </label>
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600 }}>
+            <input type="checkbox" checked={form.gateEnabled} onChange={(e) => setForm((f) => ({ ...f, gateEnabled: e.target.checked }))} />
+            Activar Capacidade Inteligente da Fila nesta filial
+          </label>
+          {saveError && <div style={{ fontSize: 12.5, color: 'var(--fc-danger)' }}>{saveError}</div>}
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button onClick={save} disabled={saving} className="fc-btn fc-btn--success" style={{ width: 'auto', padding: '10px 18px' }}>
+              {saving ? 'A guardar…' : 'Guardar'}
+            </button>
+            <button onClick={() => { setEditing(false); setForm(formFromBranch(branch)); setSaveError(null); }} className="fc-btn fc-btn--secondary" style={{ width: 'auto' }}>
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function DirectorScreen() {
   const { profile, logout } = useAuth();
   const [period, setPeriod] = useState<DirectorPeriod>('7d');
@@ -104,8 +240,27 @@ export function DirectorScreen() {
   const [rankSort, setRankSort] = useState<'worst' | 'best'>('worst');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [capacity, setCapacity] = useState<BranchCapacity[]>([]);
+  const [capacityLoading, setCapacityLoading] = useState(true);
 
   const institutionId = profile?.institutionId ?? '';
+
+  const loadCapacity = () => {
+    if (!institutionId) return;
+    setCapacityLoading(true);
+    fetchDirectorCapacityKpis(institutionId)
+      .then((rows) => setCapacity(rows))
+      .catch(() => {
+        // Erro já reportado ao Sentry dentro de rpc() em lib/queue.ts.
+      })
+      .finally(() => setCapacityLoading(false));
+  };
+
+  // Capacidade Inteligente não depende do período seleccionado (é sempre
+  // "agora") -- efeito próprio, não entra no Promise.all dos KPIs/tendência.
+  useEffect(() => {
+    loadCapacity();
+  }, [institutionId]);
 
   useEffect(() => {
     if (!institutionId) return;
@@ -219,6 +374,24 @@ export function DirectorScreen() {
               </div>
             </div>
             <TrendChart points={trend} />
+          </div>
+
+          <div className="fc-card" style={{ padding: '20px 24px' }}>
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Capacidade Inteligente da Fila</div>
+            <div style={{ fontSize: 12.5, color: 'var(--fc-text-secondary)', marginBottom: 14 }}>
+              Estimativa ao vivo de capacidade de atendimento até ao encerramento de cada filial — desligada por omissão até configurar horário e activar.
+            </div>
+            {capacityLoading ? (
+              <div style={{ padding: 20, textAlign: 'center', color: 'var(--fc-text-secondary)', fontSize: 13 }}>A carregar…</div>
+            ) : capacity.length === 0 ? (
+              <div style={{ fontSize: 13.5, color: 'var(--fc-text-secondary)' }}>Sem filiais nesta instituição.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {capacity.map((b) => (
+                  <CapacityCard key={b.branchId} branch={b} institutionId={institutionId} onSaved={loadCapacity} />
+                ))}
+              </div>
+            )}
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 20, alignItems: 'start' }}>

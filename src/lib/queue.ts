@@ -2,6 +2,7 @@ import { supabase } from '../supabase';
 import { reportError } from '../sentry';
 import type {
   Appointment,
+  BranchCapacity,
   Counter,
   DirectorAlert,
   DirectorBenchmarkRow,
@@ -571,4 +572,54 @@ export async function fetchDirectorAlerts(institutionId: string, period: Directo
     branchId: r.branch_id, branchName: r.branch_name, severity: r.severity as DirectorAlert['severity'],
     title: r.title, causa: r.causa, previsao: r.previsao, recomendacao: r.recomendacao,
   }));
+}
+
+type BranchCapacityRow = {
+  branch_id: string; branch_name: string; state: string; queue_position: number; eta_minutes: number;
+  active_counters: number; avg_service_minutes: number; remaining_by_volume: number | null;
+  remaining_by_time: number | null; gate_enabled: boolean; daily_capacity: number | null;
+  done_today: number; opening_time: string | null; closing_time: string | null; safety_margin_minutes: number;
+};
+
+/** Capacidade Inteligente da Fila -- uma linha por filial da instituição,
+ * recalculada ao vivo no servidor (`director_capacity_kpis`, reaproveita
+ * a mesma `queue_capacity_preview` que a app do cliente consulta antes de
+ * tirar senha -- ver projectogestaodefilas/lib/ticket_service.dart). */
+export async function fetchDirectorCapacityKpis(institutionId: string): Promise<BranchCapacity[]> {
+  const rows = await rpc<BranchCapacityRow[]>('director_capacity_kpis', { p_institution_id: institutionId });
+  return rows.map((r) => ({
+    branchId: r.branch_id, branchName: r.branch_name, state: r.state as BranchCapacity['state'],
+    position: r.queue_position, etaMinutes: r.eta_minutes, activeCounters: r.active_counters,
+    avgServiceMinutes: r.avg_service_minutes, remainingByVolume: r.remaining_by_volume,
+    remainingByTime: r.remaining_by_time, gateEnabled: r.gate_enabled, dailyCapacity: r.daily_capacity,
+    doneToday: r.done_today, openingTime: r.opening_time, closingTime: r.closing_time,
+    safetyMarginMinutes: r.safety_margin_minutes,
+  }));
+}
+
+/** Configura o horário/capacidade de uma filial (secção "Capacidade" do
+ * Painel de Inteligência). `openingTime`/`closingTime` em formato
+ * `'HH:MM'`; `null` desliga a gate mesmo que `gateEnabled` continue
+ * `true` na próxima chamada, porque o servidor recusa activar sem
+ * horário definido (ver `director_update_branch_capacity`). */
+export async function updateBranchCapacity(params: {
+  institutionId: string;
+  branchId: string;
+  openingTime: string | null;
+  closingTime: string | null;
+  safetyMarginMinutes: number;
+  dailyCapacity: number | null;
+  avgServiceMinutes: number;
+  gateEnabled: boolean;
+}): Promise<void> {
+  await rpc('director_update_branch_capacity', {
+    p_institution_id: params.institutionId,
+    p_branch_id: params.branchId,
+    p_opening_time: params.openingTime,
+    p_closing_time: params.closingTime,
+    p_safety_margin_minutes: params.safetyMarginMinutes,
+    p_daily_capacity: params.dailyCapacity,
+    p_avg_service_minutes: params.avgServiceMinutes,
+    p_capacity_gate_enabled: params.gateEnabled,
+  });
 }

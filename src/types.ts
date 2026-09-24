@@ -72,6 +72,29 @@ export interface DirectorAlert {
 
 export type CounterStatus = 'available' | 'serving' | 'paused';
 
+export type CapacityState = 'green' | 'yellow' | 'red';
+
+/** Uma linha de `director_capacity_kpis` -- estado de Capacidade
+ * Inteligente da Fila de uma filial, calculado ao vivo, mais a
+ * configuração actual dessa filial (para pré-preencher o formulário). */
+export interface BranchCapacity {
+  branchId: string;
+  branchName: string;
+  state: CapacityState;
+  position: number;
+  etaMinutes: number;
+  activeCounters: number;
+  avgServiceMinutes: number;
+  remainingByVolume: number | null;
+  remainingByTime: number | null;
+  gateEnabled: boolean;
+  dailyCapacity: number | null;
+  doneToday: number;
+  openingTime: string | null; // 'HH:MM:SS', formato devolvido pelo Postgres para `time`
+  closingTime: string | null;
+  safetyMarginMinutes: number;
+}
+
 export interface Counter {
   id: string;
   label: string;
