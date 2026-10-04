@@ -100,7 +100,7 @@ Restrições que se mantêm durante todo o programa:
 | Fase | Estado |
 |---|---|
 | 0 — Ponto de regresso | Concluída |
-| 1 — Repositório e histórico | Pendente |
+| 1 — Repositório e histórico | Concluída (`PaulinoQuicassa/fila-certa-platform`, privado; `apps/staff-web` transitório até à Fase 2; `supabase/` na raiz) |
 | 2 — Pacotes partilhados | Pendente |
 | 3 — Apps Web e Vercel | Pendente |
 | 4 — CI/CD | Pendente |
